@@ -56,49 +56,68 @@ class TimeAveOpType:
 
 class Task:
     
-    def __init__(self, mdata ): 
-        self.type = mdata.get( 'type', None )
-        self.metadata = mdata
+    def __init__(self, local_metadata ): 
+        self.metadata = local_metadata
         
     def __getitem__(self, key):
         return self.metadata.get( key, None )
     
-    def map( self, iproc, nprocs, local_metadata={} ):
+    def map( self, iproc, nprocs ):
         pass
         
     def reduce( self, data_array ):
         return None
 
-class CDMSBlockTask(Task):
+class TemporalProcessing(Task):
     
-    def __init__(self, mdata ): 
-        Task.__init__( self, mdata )  
+    def __init__(self, task_spec, local_metadata={} ): 
+        Task.__init__( self, local_metadata ) 
+        ( time_slab, self.task_metadata ) = task_spec            
+        [ ( time0, time1 ), self.num_steps ] = time_slab
+        self.start_time = getCompTime(time0)
+        self.end_time   = getCompTime(time1)
+
+    def map( self, iproc, nprocs ):
+        dataset_metadata = self.task_metadata[ 'dataset' ]
+        dataset_path = dataset_metadata.get( 'dataset', None )
+        var_name = dataset_metadata.get( 'variable', None )
+        ds = cdms2.open( dataset_path )
+        var = ds[ var_name ]
+        print var.info()
+        sel = self.getSelector()
+        if sel: var = var[sel]
+        
+        operation_metadata = self.task_metadata[ 'operation' ]
+        opType = operation_metadata.get( 'type', TimeAveOpType.UNDEF )
+
+        data_dir = os.path.basename( dataset_path )
+        outfile = cdms2.createDataset( os.path.join(data_dir,'ave_test.nc') )
+        outfile.write( result, index=0 )
+        outfile.close()
         
     def getSelector(self):  
         sel = None
-        lat_bounds = self.metadata.get( 'lat', None )
+        grid_metadata = self.task_metadata[ 'grid' ]
+        lat_bounds = grid_metadata.get( 'lat', None )
         if lat_bounds:
             if not isList( lat_bounds ): sel1 = Selector( latitude=lat_bounds )
             else: sel1 = Selector( latitude=lat_bounds[0] ) if ( len( lat_bounds ) == 1 ) else Selector( latitude=lat_bounds )
             sel= sel1 if ( sel == None ) else sel & sel1
-        lon_bounds = self.metadata.get( 'lon', None )
+        lon_bounds = grid_metadata.get( 'lon', None )
         if lon_bounds:
             if not isList( lon_bounds ): sel1 = Selector( longitude=lon_bounds )
             else: sel1 = Selector( longitude=lon_bounds[0] ) if ( len( lon_bounds ) == 1 ) else Selector( longitude=lon_bounds )
             sel= sel1 if ( sel == None ) else sel & sel1
-        lev_bounds = self.metadata.get( 'lev', None )
+        lev_bounds = grid_metadata.get( 'lev', None )
         if lev_bounds:
             if not isList( lev_bounds ): sel1 = Selector( level=lev_bounds )
             else: sel1 = Selector( level=lev_bounds[0] ) if ( len( lev_bounds ) == 1 ) else Selector( level=lev_bounds )
             sel= sel1 if ( sel == None ) else sel & sel1
-        time_bounds = self.metadata.get( 'time', None )
-        if time_bounds:
-            if not isList( time_bounds ): sel1 = Selector( time=time_bounds )
-            else: sel1 = Selector( time=time_bounds[0] ) if ( len( time_bounds ) == 1 ) else Selector( time=time_bounds )
-            sel= sel1 if ( sel == None ) else sel & sel1    
+        tsel = Selector( time=( str(self.start_time), str(self.end_time) ) )
+        sel= tsel if ( sel == None ) else sel & tsel    
         return sel
     
-    def map( self, iproc, nprocs, local_metadata={} ):
+    def map1( self, iproc, nprocs, local_metadata={} ):
         dataset_path = self.metadata.get( 'dataset', None )
         var_name = self.metadata.get( 'variable', None )
         ds = cdms2.open( dataset_path )
@@ -129,6 +148,12 @@ class CDMSBlockTask(Task):
         return None
 
 
+def getTask( task_spec ):
+    task_domain = task_spec[0].lower()
+    if task_domain == 'quit': return None
+    if task_domain == 'temporal': 
+        return TemporalProcessing( task_spec[1:] )   
+    
 if __name__ == "__main__":
     
     metadata = {}

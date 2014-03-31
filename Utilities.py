@@ -4,11 +4,8 @@ Created on Jan 15, 2014
 @author: tpmaxwel
 '''
 
-from PyQt4 import QtCore
 import numpy as np
-import vtk, StringIO, cPickle, sys, os
-
-control_message_signal = QtCore.SIGNAL("ControlMsg")
+import vtk, StringIO, cPickle, sys, os, cdtime
 
 def isList( val ):
     valtype = type(val)
@@ -16,6 +13,15 @@ def isList( val ):
 
 def getItem( output, index = 0 ):  
     return output[ index ] if isList(output) else output  
+
+def getCompTime( str_time ):
+    try:
+        if str_time:
+            itime = [ int(tok) for tok in str_time.replace('-',' ').split() ]
+            return cdtime.comptime( *itime )
+    except Exception, err:
+        print>>sys.stderr,  "Error parsing time string '%s': %s" % ( str_time, str( err ) )
+    return None 
 
 def getMaxScalarValue( scalar_dtype ):
     if scalar_dtype == np.ushort:

@@ -6,10 +6,11 @@ Created on Jan 13, 2014
 
 from mpi4py import MPI
 from Queue import Queue
-# from PyQt4 import QtCore
+import cdutil, cdtime
 import time, threading, sys, os
-from Utilities import control_message_signal
-from Tasks import Task
+from Utilities import *
+from Tasks import Task, getTask
+from TaskMapper import TaskMapper, TimeMgr
 
 class TaskAllocationMethod:
     ROUND_ROBIN = 0
@@ -22,37 +23,54 @@ class TaskFarmer():
         self.task_communicator = HControllerComm( comm, self.task_queue )
         self.task_communicator.start()
         self.metadata = {}
+        self.taskMapper = TaskMapper( self.task_communicator.size )
 
     def post(self, task ):
         self.task_queue.put_nowait( task )
 
-    def processConfigData( self, config_data ): 
-        bounds = config_data.get('bounds', None )
-        if bounds:
-            self.metadata['lat_bounds'] = bounds.get('lat',None)
-            self.metadata['lon_bounds'] = bounds.get('lon',None)
-            self.metadata['lev_bounds'] = bounds.get('lev',None)
-            self.metadata['time_bounds'] = bounds.get('time',None)
-        dataset = config_data.get('dataset', None )
-        if dataset:
-            self.metadata['dset_path'] = dataset.get( 'path', None )
-            self.metadata['dset_id'] = dataset.get( 'id', self.metadata['dset_path'] )
-            self.metadata['dset_vars'] = dataset.get( 'vars', "" ).split(',')
-        operation = config_data.get('operation', None )
-        if operation:
-            self.metadata['op_class'] = dataset.get( 'class', None )
-            self.metadata['op_type'] = dataset.get( 'type', None )
-            self.metadata['op_period'] = dataset.get( 'period', None )
+#     def processConfigData( self, config_data ): 
+#         bounds = config_data.get('bounds', None )
+#         self.
+#         if bounds: self.setBoundsMetadata( bounds )
+#         
+#         dataset = config_data.get('dataset', None )
+#         if dataset:
+#             self.metadata['dset_path'] = dataset.get( 'path', None )
+#             self.metadata['dset_id'] = dataset.get( 'id', self.metadata['dset_path'] )
+#             self.metadata['dset_vars'] = dataset.get( 'vars', "" ).split(',')
+#         operation = config_data.get('operation', None )
+#         if operation:
+#             self.metadata['op_domain'] = dataset.get( 'domain', None )
+#             self.metadata['op_type'] = dataset.get( 'type', None )
+#             self.metadata['op_period'] = dataset.get( 'period', None )
+#             self.metadata['op_period_units'] = dataset.get( 'units', None )
+        
+    def processTimeMetadata( self, task_metadata ):
+        time_mdata = task_metadata.get('time', None )
+        start_time =   getCompTime( time_mdata.get('start_time',None) )
+        end_time =     getCompTime( time_mdata.get('end_time',None) )
+        op_period =    int( time_mdata.get( 'period', None ) )
+        op_period_units =   time_mdata.get( 'units', None )
+        return start_time, end_time, op_period, op_period_units
+                        
+    def setMetadata( self, metadata ):
+        self.metadata.extend( metadata )
             
-    def createTasks(self):
-        pass
-            
-    def execute(self): 
-        tasks = self.createTasks()
-        for  task in tasks:
-            self.task_communicator.post( task )
-            
-       
+    def createTasks( self, task_metadata ):
+        op_domain = task_metadata['op_domain']  
+        task_specs = []     
+        if op_domain.lower() == "time":
+            start_time, end_time, op_period, op_period_units = self.processTimeMetadata( task_metadata )                    
+            time_decomp = self.taskMapper.getTimeDecomposition( start_time, end_time, op_period, TimeMgr.getCDUnits( op_period_units ) )
+            for time_slab in time_decomp:
+                task_specs.append( ( time_slab, task_metadata ) )               
+        return task_specs;
+                           
+    def execute( self, task_metadata ): 
+        task_specs = self.createTasks( task_metadata )
+        for  task_spec in task_specs:
+            self.task_queue.post( task_spec )
+                   
 class HControllerComm( threading.Thread ):
 
     def __init__(self, comm, queue, **args ): 
@@ -113,17 +131,26 @@ class HCellComm( threading.Thread ):
         while self.active:
             task = None
             if self.task_allocation_method == TaskAllocationMethod.BROADCAST:
-                task = self.comm.bcast( task, root = 0 )
-                if task.type == 'Quit': return 
-                result = task.map( self.rank, self.size, self.metadata )
-#                self.comm.gather(result, root=0)
-            elif self.task_allocation_method == TaskAllocationMethod.ROUND_ROBIN:
-                task = self.comm.recv( root = 0, tag=11 )
-                if task.type == 'Quit': return 
-                result = task.map( self.rank, self.size, self.metadata )
-#                self.comm.gather(result, root=0)
-#            print "HCellComm-> message received: ", str( msg )
+                task_spec = self.comm.bcast( task, root = 0 )
+                rv = self.processTaskSpec( task_spec )
+                if rv == -1: return
 
+            elif self.task_allocation_method == TaskAllocationMethod.ROUND_ROBIN:
+                task_spec = self.comm.recv( root = 0, tag=11 )
+                rv = self.processTaskSpec( task_spec )
+                if rv == -1: return
+
+
+
+    def processTaskSpec( self, task_spec ):
+        task = getTask( task_spec[1:] )
+        if task: return task.map( self.rank, self.size )
+        return -1
+            
+            
+    
+        
+#                self.comm.gather(result, root=0)
 
 #     
 # class QHControllerComm( QtCore.QThread ):
@@ -181,5 +208,10 @@ class HCellComm( threading.Thread ):
 def getNodeApp():
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()    
-    hcomm = TaskFarmer(comm) if ( rank == 0 ) else HCellComm( comm )    
+    hcomm = TaskFarmer(comm) if ( rank == 0 ) else HCellComm( comm )
+    hcomm.createTasks()   
     return hcomm
+
+if __name__ == "__main__":
+    averager = cdutil.FEB
+    print "x"

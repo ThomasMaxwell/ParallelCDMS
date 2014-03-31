@@ -59,8 +59,15 @@ if __name__ == "__main__":
     
     if app.rank == 0:
         if len(sys.argv)>2 and sys.argv[1] == '-c':
-            config = ConfigFileParser( sys.argv[2] )
-            app.processConfigData( config.data() )
+            task_metadata = ConfigFileParser( sys.argv[2] )
+        else:
+            task_metadata = {}
+            task_metadata['time'] = {}
+            task_metadata['bounds'] = {}
+            task_metadata['dataset'] = {}
+            task_metadata['operation'] = {}
+            
+        app.execute( task_metadata )
 
     else:
         pass     
