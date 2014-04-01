@@ -49,8 +49,9 @@ class TaskFarmer():
         time_mdata = task_metadata.get('time', None )
         start_time =   getCompTime( time_mdata.get('start_time',None) )
         end_time =     getCompTime( time_mdata.get('end_time',None) )
-        op_period =    int( time_mdata.get( 'period', None ) )
-        op_period_units =   time_mdata.get( 'units', None )
+        op_mdata = task_metadata.get('operation', None )
+        op_period =       op_mdata.get( 'period', None )   
+        op_period_units = op_mdata.get( 'period_units', None )
         return start_time, end_time, op_period, op_period_units
                         
     def setMetadata( self, metadata ):
@@ -61,7 +62,7 @@ class TaskFarmer():
         task_specs = []     
         if op_domain.lower() == "time":
             start_time, end_time, op_period, op_period_units = self.processTimeMetadata( task_metadata )                    
-            time_decomp = self.taskMapper.getTimeDecomposition( start_time, end_time, op_period, TimeMgr.getCDUnits( op_period_units ) )
+            time_decomp = self.taskMapper.getTimeDecomposition( start_time, end_time, op_period, op_period_units )
             for time_slab in time_decomp:
                 task_specs.append( ( time_slab, task_metadata ) )               
         return task_specs;

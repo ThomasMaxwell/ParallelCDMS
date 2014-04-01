@@ -17,7 +17,7 @@ def getItem( output, index = 0 ):
 def getCompTime( str_time ):
     try:
         if str_time:
-            itime = [ int(tok) for tok in str_time.replace('-',' ').split() ]
+            itime = [ int( float(tok) ) for tok in str_time.replace('-',' ').replace(':',' ').split() ]
             return cdtime.comptime( *itime )
     except Exception, err:
         print>>sys.stderr,  "Error parsing time string '%s': %s" % ( str_time, str( err ) )
