@@ -5,7 +5,24 @@ Created on Jan 15, 2014
 '''
 
 import numpy as np
-import vtk, StringIO, cPickle, sys, os, cdtime
+import vtk, StringIO, cPickle, sys, os, cdtime, cdutil
+
+class OpDomain:
+    EXIT = 0
+    TIME = 1
+    SPACE = 2
+    VARIABLES = 3
+
+    
+class TimeProcType:
+    UNDEF = 0
+    SUBSET = 1
+    MEAN = 2
+    ANOM = 3
+    SUM = 3
+    
+def isNone( obj ):
+    return id( obj ) == id( None )
 
 def isList( val ):
     valtype = type(val)

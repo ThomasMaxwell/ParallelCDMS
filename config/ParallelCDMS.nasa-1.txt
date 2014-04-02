@@ -1,0 +1,22 @@
+[dataset]
+
+   path = /Users/tpmaxwel/Data/MERRA_hourly_2D_precip/MERRA_hourly_precip.xml
+   variable = prectot
+
+[operation]
+
+   domain = time
+   type = sum
+   name = MERRA_precip_monthly_totals
+
+[time]
+
+   start_time =  1980, 1
+   end_time = 1982, 1 
+   period_value = 1 
+   period_units = month
+
+[grid]
+
+   lat =  40, 80
+   lon = -180, 0  

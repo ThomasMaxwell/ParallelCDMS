@@ -10,7 +10,7 @@ import cdutil, cdtime
 import time, threading, sys, os
 from Utilities import *
 from Tasks import Task, getTask
-from TaskMapper import TaskMapper, TimeMgr
+from TaskMapper import TaskMapper
 
 class TaskAllocationMethod:
     ROUND_ROBIN = 0
@@ -20,88 +20,88 @@ class TaskFarmer():
     
     def __init__(self, comm, **args ):
         self.task_queue = Queue()
-        self.task_communicator = HControllerComm( comm, self.task_queue )
-        self.task_communicator.start()
+        self.multithread = args.get( 'multithread', True )
+        self.task_controller = TaskController( self.task_queue, comm )
+        if self.multithread: self.task_controller.start()
         self.metadata = {}
-        self.taskMapper = TaskMapper( self.task_communicator.size )
+        self.taskMapper = TaskMapper( self.task_controller.size )
+        
 
     def post(self, task ):
         self.task_queue.put_nowait( task )
-
-#     def processConfigData( self, config_data ): 
-#         bounds = config_data.get('bounds', None )
-#         self.
-#         if bounds: self.setBoundsMetadata( bounds )
-#         
-#         dataset = config_data.get('dataset', None )
-#         if dataset:
-#             self.metadata['dset_path'] = dataset.get( 'path', None )
-#             self.metadata['dset_id'] = dataset.get( 'id', self.metadata['dset_path'] )
-#             self.metadata['dset_vars'] = dataset.get( 'vars', "" ).split(',')
-#         operation = config_data.get('operation', None )
-#         if operation:
-#             self.metadata['op_domain'] = dataset.get( 'domain', None )
-#             self.metadata['op_type'] = dataset.get( 'type', None )
-#             self.metadata['op_period'] = dataset.get( 'period', None )
-#             self.metadata['op_period_units'] = dataset.get( 'units', None )
         
     def processTimeMetadata( self, task_metadata ):
         time_mdata = task_metadata.get('time', None )
         start_time =   getCompTime( time_mdata.get('start_time',None) )
         end_time =     getCompTime( time_mdata.get('end_time',None) )
-        op_mdata = task_metadata.get('operation', None )
-        op_period =       op_mdata.get( 'period', None )   
-        op_period_units = op_mdata.get( 'period_units', None )
-        return start_time, end_time, op_period, op_period_units
+        op_period_value =       time_mdata.get( 'period_value', None )   
+        op_period_units = time_mdata.get( 'period_units', None )
+        period = None if (op_period_value == None ) else ( op_period_value, op_period_units )
+        op_time_length_value =       time_mdata.get( 'time_length', None )   
+        op_time_length_units = time_mdata.get( 'time_length_units', None )
+        time_length = None if (op_time_length_value == None ) else ( op_time_length_value, op_time_length_units )
+        return start_time, end_time, period, time_length
                         
     def setMetadata( self, metadata ):
         self.metadata.extend( metadata )
             
     def createTasks( self, task_metadata ):
-        op_domain = task_metadata['op_domain']  
+        operation_metadata = task_metadata['operation']  
+        op_domain = operation_metadata['domain']  
         task_specs = []     
-        if op_domain.lower() == "time":
-            start_time, end_time, op_period, op_period_units = self.processTimeMetadata( task_metadata )                    
-            time_decomp = self.taskMapper.getTimeDecomposition( start_time, end_time, op_period, op_period_units )
-            for time_slab in time_decomp:
-                task_specs.append( ( time_slab, task_metadata ) )               
+        if op_domain == OpDomain.TIME:
+            start_time, end_time, op_period, op_time_length = self.processTimeMetadata( task_metadata )                    
+            time_decomp = self.taskMapper.getTimeDecomposition( start_time, end_time, op_period, op_time_length )
+            for ( time_slab, slab_index ) in time_decomp:
+                time_metadata = task_metadata[ 'time' ]
+                time_metadata['slabs'] = time_slab 
+                time_metadata['index'] = slab_index 
+                task_specs.append( task_metadata )               
         return task_specs;
                            
     def execute( self, task_metadata ): 
         task_specs = self.createTasks( task_metadata )
         for  task_spec in task_specs:
-            self.task_queue.post( task_spec )
-                   
-class HControllerComm( threading.Thread ):
+            if self.multithread:    self.task_queue.put_nowait( task_spec )
+            else:                   self.task_controller.processTaskSpec( task_spec )
+                  
+class TaskController( threading.Thread ):
 
-    def __init__(self, comm, queue, **args ): 
-        super( HControllerComm, self ).__init__()      
+    def __init__(self, queue, comm=None, **args ): 
+        super( TaskController, self ).__init__()      
         self.comm = comm
-        self.rank = self.comm.Get_rank()
-        self.size = self.comm.Get_size()
+        self.rank = self.comm.Get_rank() if self.comm else 0
+        self.size = self.comm.Get_size() if self.comm else 1
+        self.local_task_exec = None if self.size > 1 else TaskExecutable()
         self.work_queue = queue
         self.active = True
         self.task_allocation_method = TaskAllocationMethod.ROUND_ROBIN
         self.setDaemon(True)
         assert self.rank == 0, "Controller rank ( %d ) must be 0" % self.rank
+        
+    def processTaskSpec(self,task):
+        self.local_task_exec.processTaskSpec( task )  
                        
     def run(self):
         iproc = 0
         while self.active:
             iproc = iproc + 1
-            if iproc == self.task_communicator.size: iproc = 1
+            if iproc == self.size: iproc = 1
             task = self.work_queue.get()
             
-            if self.task_allocation_method == TaskAllocationMethod.ROUND_ROBIN:
-                self.comm.send( task, dest=iproc, tag=11)
-            elif self.task_allocation_method == TaskAllocationMethod.BROADCAST:
-                pass 
+            if self.size == 1:                
+                self.local_task_exec.processTaskSpec( task )               
+            else:           
+                if self.task_allocation_method == TaskAllocationMethod.ROUND_ROBIN:
+                    self.comm.send( task, dest=iproc, tag=11)
+                elif self.task_allocation_method == TaskAllocationMethod.BROADCAST:
+                    pass 
 
 #                 self.comm.bcast( task, root = 0 )
 #     
 #                 result = None
 #                 result = self.comm.gather(result, root=0)
-#     #            print "HCellComm-> message received: ", str( msg )
+#     #            print "TaskExecutable-> message received: ", str( msg )
 #                 reduced_result = task.reduce( result )
 #                 self.work_queue.task_done()
 #                 self.processResult( reduced_result, task )
@@ -113,17 +113,16 @@ class HControllerComm( threading.Thread ):
     def processResult( self, reduced_result, task ):
         pass    
    
-class HCellComm( threading.Thread ):
+class TaskExecutable( threading.Thread ):
 
-    def __init__(self, comm, **args ): 
-        super( HCellComm, self ).__init__()      
+    def __init__(self, comm=None, **args ): 
+        super( TaskExecutable, self ).__init__()      
         self.comm = comm
-        self.rank = self.comm.Get_rank()
-        self.size = self.comm.Get_size()
+        self.rank = self.comm.Get_rank() if self.comm else 0 
+        self.size = self.comm.Get_size() if self.comm else 1 
         self.task_allocation_method = TaskAllocationMethod.ROUND_ROBIN
         self.metadata = args
         self.active = True
-        assert self.rank <> 0, "Cell rank must not be 0" 
         
     def stop(self):
         self.active = False
@@ -144,75 +143,13 @@ class HCellComm( threading.Thread ):
 
 
     def processTaskSpec( self, task_spec ):
-        task = getTask( task_spec[1:] )
+        task = getTask( task_spec )
         if task: return task.map( self.rank, self.size )
         return -1
             
-            
-    
-        
-#                self.comm.gather(result, root=0)
-
-#     
-# class QHControllerComm( QtCore.QThread ):
-# 
-#     def __init__(self, comm, work_queue, **args ): 
-#         super( HControllerComm, self ).__init__()      
-#         self.comm = comm
-#         self.rank = self.comm.Get_rank()
-#         self.size = self.comm.Get_size()
-#         self.active = True
-#         self.work_queue = work_queue
-#         self.setDaemon(True)
-#         assert self.rank == 0, "Controller rank ( %d ) must be 0" % self.rank
-#         
-#     def stop(self):
-#         self.active = False
-#         
-#     def run(self):
-#         while self.active:
-#             task = self.work_queue.get()
-#             self.comm.bcast( task, root = 0 )
-# 
-#             result = None
-#             result = self.comm.gather(result, root=0)
-# #            print "HCellComm-> message received: ", str( msg )
-#             reduced_result = task.reduce( result )
-#             self.emit( control_message_signal, reduced_result )
-#             self.work_queue.task_done()
-# 
-# class QHCellComm( QtCore.QThread ):
-# 
-#     def __init__(self, comm, **args ): 
-#         super( HCellComm, self ).__init__()      
-#         self.comm = comm
-#         self.rank = self.comm.Get_rank()
-#         self.size = self.comm.Get_size()
-#         self.sleepTime = 0.01
-#         self.active = True
-#         assert self.rank <> 0, "Cell rank must not be 0" 
-#         
-#     def stop(self):
-#         self.active = False
-#         
-#     def run(self):
-#         while self.active:
-#             msg = None
-#             msg = self.comm.bcast( msg, root = 0 )
-# #            print "HCellComm-> message received: ", str( msg )
-#             self.emit( control_message_signal, msg )
-#             if msg[ 'type' ] == 'Quit': 
-#                 self.stop()               
-#             else: 
-#                 time.sleep( self.sleepTime )            
-
-def getNodeApp():
+def getNodeApp(**args):
     comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()    
-    hcomm = TaskFarmer(comm) if ( rank == 0 ) else HCellComm( comm )
-    hcomm.createTasks()   
+    rank = comm.Get_rank()
+    if ( not 'multithread' in args ):  args['multithread' ] = ( comm.size > 1 )
+    hcomm = TaskFarmer(comm, **args) if ( rank == 0 ) else TaskExecutable( comm, **args )
     return hcomm
-
-if __name__ == "__main__":
-    averager = cdutil.FEB
-    print "x"

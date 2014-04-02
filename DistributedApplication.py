@@ -11,8 +11,8 @@ Created on Jan 14, 2014
 '''
 
 import ClusterCommunicator
-import os, sys
-from Utilities import isList
+import os, sys, cdtime
+from Utilities import *
 
 class ConfigFileParser:
     
@@ -46,7 +46,6 @@ class ConfigFileParser:
             
     def addField( self, name, value ):
         if self.current_cat == None: self.addCategory( 'global' )
-#        vlist = value.split(',')
         self.current_cat[ name ] = value 
 #        print "Add field: %s %s %s " % ( self.current_cat_name, name, value )
         
@@ -54,20 +53,40 @@ class ConfigFileParser:
         return self.cats     
 
 if __name__ == "__main__":
+       
+    app = ClusterCommunicator.getNodeApp( )
+    short_run = True
 
-    app = ClusterCommunicator.getNodeApp()
+    start_time = cdtime.comptime( 1980, 1 )  
+    end_time = cdtime.comptime( 1980, 3 ) if short_run else cdtime.comptime( 1982, 1 ) 
     
-    if app.rank == 0:
-        if len(sys.argv)>2 and sys.argv[1] == '-c':
-            task_metadata = ConfigFileParser( sys.argv[2] )
-        else:
-            task_metadata = {}
-            task_metadata['time'] = {}
-            task_metadata['bounds'] = {}
-            task_metadata['dataset'] = {}
-            task_metadata['operation'] = {}
-            
-        app.execute( task_metadata )
+    dataset = {}    
+    dataset['path'] = '/Users/tpmaxwel/Data/MERRA_hourly_2D_precip/MERRA_hourly_precip.xml'
+    dataset[ 'variable' ] = 'prectot'    
 
+    operation = {}    
+    operation['domain'] = OpDomain.TIME
+    operation['type'] = TimeProcType.SUM   
+    operation[ 'name' ] = 'MERRA_precip_monthly_totals'
+
+    time = {} 
+    time['start_time'] = str( start_time )   
+    time['end_time'] = str( end_time )   
+    time[ 'period_value' ] = 1   
+    time[ 'period_units' ] = cdtime.Month  
+
+    grid = {}    
+    grid['lat'] = [ 40, 80 ]
+    grid[ 'lon' ] = [ -180, 0 ]
+    
+    if len(sys.argv)>2 and sys.argv[1] == '-c':
+        task_metadata = ConfigFileParser( sys.argv[2] )
     else:
-        pass     
+        task_metadata = {}
+        task_metadata['time'] = time
+        task_metadata['grid'] = grid
+        task_metadata['dataset'] = dataset
+        task_metadata['operation'] = operation
+        
+    app.execute( task_metadata )
+   

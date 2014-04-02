@@ -6,19 +6,31 @@ Created on Mar 31, 2014
 
 import cdtime, numpy, sys, copy
 
+def serializeSpec( spec ):
+    if isinstance( spec, list ) or isinstance( spec, tuple ):
+        return [ str(item) for item in spec ]
+    else: return str( spec )
+
 class TaskMapper:
 
     def __init__(self, nprocs, **args ):
         self.nprocs = nprocs
                    
-    def getTimeDecomposition( self, start_time, end_time, period, units ):
+    def getTimeDecomposition( self, start_time, end_time, slice_period, slice_length = None ):
         t0 = start_time 
-        time_slices = [ t0 ]
+        time_slices = []
         while True:
-            t1 = t0.add( period, units )
-            time_slices.append( t1 )
-            if t1.cmp( end_time ) >= 0: break
-            t0 = t1
+            if slice_length == None:
+                time_slices.append( t0 )
+                t1 = t0
+            else:
+                t1 = t0.add( *slice_length )
+                if t1.cmp( end_time ) > 0: break   
+                time_slices.append( ( t0, t1 ) )
+            
+            t0 = t0.add( *slice_period )
+            if t0.cmp( end_time ) > 0: break                 
+
         nslices = len( time_slices )
         if nslices > self.nprocs:
             nexcess_slices = nslices / self.nprocs 
@@ -31,39 +43,50 @@ class TaskMapper:
         slice_index = 0  
         for iProc in range( len( nslice_map ) ):
             try:
-                nslices = nslice_map[ iProc ]
-                ts_start = time_slices[ slice_index ]
-                time_list = [ str(ts_start) ]
-                for iSlice in range( nslices ):
-                    ts1 = time_slices[ slice_index + iSlice + 1 ]
-                    time_list.append( str(ts1) )
-                decomp.append( [ time_list, nslices ] )
+                nslices = nslice_map[ iProc ] 
+                slice_spec_start = time_slices[ slice_index ]
+                time_list = [ serializeSpec( slice_spec_start ) ]
+                n_additional_slices = nslices-1 if (slice_length == None) else nslices-2
+                for iSlice in range( n_additional_slices ):
+                    slice_spec = time_slices[ slice_index + iSlice + 1 ]
+                    time_list.append( serializeSpec( slice_spec ) )
+                decomp.append( [ time_list, slice_index ] )
                 slice_index = slice_index + nslices
             except Exception, err:
                 print str(err)
                             
-        return decomp, nslice_map, time_slices
+        return decomp
 
 if __name__ == "__main__":
+    test_number = 0
     
     tm = TaskMapper( 10 )
     
-    start_time = cdtime.comptime( 1996, 2 ) 
-    end_time = cdtime.comptime( 1997, 2 )  
-    period = 1 
-    units = cdtime.Month
-       
-    decomp, nslice_map, time_slices = tm.getTimeDecomposition( start_time, end_time, period, units )
-    
-    print " nslices = %d: decomp = %s, " % ( len(decomp), str( decomp ) )   
-    print " nslice_map = ", str( nslice_map )
-    print " time_slices = ", str( time_slices )
-    
-    
-    
-    
-    
-    
+    if test_number == 0:
+        start_time = cdtime.comptime( 1996, 2 ) 
+        end_time = cdtime.comptime( 1997, 2 )     
+        slice_period = ( 1, cdtime.Month )        
+        decomp = tm.getTimeDecomposition( start_time, end_time, slice_period )
+        
+        print " nslices = %d: decomp = %s, " % ( len(decomp), str( decomp ) )   
+#        print " nslice_map = ", str( nslice_map )
+ #       print " time_slices = ", str( time_slices )
+        
+    if test_number == 1:
+        start_time = cdtime.comptime( 1996, 3 ) 
+        end_time = cdtime.comptime( 2001, 6 )     
+        slice_period = ( 1, cdtime.Year )        
+        slice_length = ( 3, cdtime.Month )        
+        decomp = tm.getTimeDecomposition( start_time, end_time, slice_period, slice_length )
+        
+        print " nslices = %d: decomp = %s, " % ( len(decomp), str( decomp ) )   
+#        print " nslice_map = ", str( nslice_map )
+#        print " time_slices = ", str( time_slices )
+        
+        
+        
+        
+        
     
     
     
