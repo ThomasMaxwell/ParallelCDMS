@@ -32,8 +32,8 @@ class TaskFarmer():
         
     def processTimeMetadata( self, task_metadata ):
         time_mdata = task_metadata.get('time', None )
-        start_time =   getCompTime( time_mdata.get('start_time',None) )
-        end_time =     getCompTime( time_mdata.get('end_time',None) )
+        start_time =   TimeUtil.getCompTime( time_mdata.get('start_time',None) )
+        end_time =     TimeUtil.getCompTime( time_mdata.get('end_time',None) )
         op_period_value =       time_mdata.get( 'period_value', None )   
         op_period_units = time_mdata.get( 'period_units', None )
         period = None if (op_period_value == None ) else ( op_period_value, op_period_units )

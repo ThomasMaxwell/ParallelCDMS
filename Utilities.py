@@ -7,6 +7,35 @@ Created on Jan 15, 2014
 import numpy as np
 import vtk, StringIO, cPickle, sys, os, cdtime, cdutil
 
+class TimeUtil:
+    time_str = [ "UNDEF", "seconds", "minutes", "hours", "days", "weeks", "months", "seasons", "years" ]    
+    
+    @classmethod
+    def getRelTime( cls, ctime, units, ctime_base = None, calendar = cdtime.DefaultCalendar ):
+        if isinstance( ctime, str ):        ctime = cls.getCompTime( ctime )
+        if ctime_base == None: ctime_base = ctime
+        rel_units = "%s since %s" % ( cls.time_str[units], str(ctime_base) )
+        return ctime.torel( rel_units, calendar )
+        
+    
+    @classmethod
+    def getCDUnits( cls, str_units ):
+        mstr = str_units[0:3].lower()
+        for iUnit in range( len(cls.time_str) ):
+            if mstr == cls.time_str[iUnit][0:3]:
+                return iUnit
+        return 0
+
+    @classmethod
+    def getCompTime( cls, str_time ):
+        try:
+            if str_time:
+                itime = [ int( float(tok) ) for tok in str_time.replace('-',' ').replace(':',' ').split() ]
+                return cdtime.comptime( *itime )
+        except Exception, err:
+            print>>sys.stderr,  "Error parsing time string '%s': %s" % ( str_time, str( err ) )
+        return None 
+
 class OpDomain:
     EXIT = 0
     TIME = 1
@@ -31,14 +60,6 @@ def isList( val ):
 def getItem( output, index = 0 ):  
     return output[ index ] if isList(output) else output  
 
-def getCompTime( str_time ):
-    try:
-        if str_time:
-            itime = [ int( float(tok) ) for tok in str_time.replace('-',' ').replace(':',' ').split() ]
-            return cdtime.comptime( *itime )
-    except Exception, err:
-        print>>sys.stderr,  "Error parsing time string '%s': %s" % ( str_time, str( err ) )
-    return None 
 
 def getMaxScalarValue( scalar_dtype ):
     if scalar_dtype == np.ushort:

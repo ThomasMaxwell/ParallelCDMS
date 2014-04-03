@@ -55,7 +55,7 @@ class ConfigFileParser:
 if __name__ == "__main__":
        
     app = ClusterCommunicator.getNodeApp( )
-    short_run = True
+    short_run = False
 
     start_time = cdtime.comptime( 1980, 1 )  
     end_time = cdtime.comptime( 1980, 3 ) if short_run else cdtime.comptime( 1982, 1 ) 
