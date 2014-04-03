@@ -32,10 +32,11 @@ class TaskMapper:
             if t0.cmp( end_time ) > 0: break                 
 
         nslices = len( time_slices )
-        if nslices > self.nprocs:
-            nexcess_slices = nslices / self.nprocs 
-            nexcess_slices_rem = nslices - nexcess_slices*self.nprocs - 1
-            nslice_map = [ nexcess_slices if ( iSlice >= nexcess_slices_rem ) else nexcess_slices + 1 for iSlice in range(self.nprocs) ]
+        n_worker_procs = self.nprocs - 1
+        if nslices > n_worker_procs:
+            nexcess_slices = nslices / n_worker_procs 
+            nexcess_slices_rem = nslices - nexcess_slices*n_worker_procs - 1
+            nslice_map = [ nexcess_slices if ( iSlice >= nexcess_slices_rem ) else nexcess_slices + 1 for iSlice in range(n_worker_procs) ]
         else:
             nslice_map = [ 1 ] * nslices
         

@@ -149,6 +149,7 @@ class TaskExecutable( threading.Thread ):
         self.start()
 
     def processTaskSpec( self, task_spec ):
+        print "Processor %d: Processing task spec: " % self.rank, str( task_spec )
         task = getTask( task_spec )
         if task: return task.map( self.rank, self.size )
         return -1
