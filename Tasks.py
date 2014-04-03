@@ -41,10 +41,10 @@ class TemporalProcessing(Task):
                     axes.append( axis )
                 elif ( reduced_axis_size == 1 ):
                     time_metadata = self.task_metadata[ 'time' ]
-                    period_units = time_metadata[ 'period_units' ]
-                    period_value = time_metadata[ 'period_value' ]
-                    time_length_value = time_metadata.get( 'time_length', period_value )   
-                    time_length_units = time_metadata.get( 'time_length_units', period_units )
+                    period_units = TimeUtil.parseTimeUnitSpec( time_metadata[ 'period_units' ] )
+                    period_value = TimeUtil.parseRelTimeValueSpec( time_metadata[ 'period_value' ] )
+                    time_length_value = TimeUtil.parseRelTimeValueSpec( time_metadata.get( 'time_length', period_value ) )  
+                    time_length_units = TimeUtil.parseTimeUnitSpec( time_metadata.get( 'time_length_units', period_units ) )
                     rdt0 = TimeUtil.getRelTime( timestamp, period_units, self.start_time, axis.getCalendar() )
                     rdt1 = rdt0.add( time_length_value, time_length_units )
                     time_data = numpy.array(  [ rdt0.value ], dtype=numpy.float )
@@ -60,7 +60,9 @@ class TemporalProcessing(Task):
                      
 
     def map( self, iproc, nprocs ):
-        print "Proc %d: Running time processing." % iproc; sys.stdout.flush()
+        self.iproc = iproc
+        self.nprocs = nprocs
+        print "Proc %d: Mapping Task." % iproc; sys.stdout.flush()
         tp0 = time.clock()
         dataset_metadata = self.task_metadata[ 'dataset' ]
         dataset_path = dataset_metadata.get( 'path', None )
@@ -74,7 +76,8 @@ class TemporalProcessing(Task):
         if sel: var = var(sel)
         tp1 = time.clock()
         tp = tp1 - tp0
-                
+        print "Proc %d: Done Mapping Task, time = %.3f" % ( iproc, tp ); sys.stdout.flush()               
+        
         tr0 = time.clock()
         results = self.runTimeProcessing( var )
         tr1 = time.clock()
@@ -86,7 +89,7 @@ class TemporalProcessing(Task):
         for ( timestamp, result_var ) in results:
             outfilename = "%s-%s.nc" % ( output_path, str(timestamp) )
             outfile = cdms2.createDataset( outfilename )
-            outfile.write( result_var ) # , None, None, None, None, None, None, global_time_index ) 
+            outfile.write( result_var ) 
             global_time_index = global_time_index + 1
             outfile.close()
             time_axis = result_var.getTime()
@@ -96,8 +99,9 @@ class TemporalProcessing(Task):
         print "Proc %d:  Computed result, nslabs = %d, data prep time = %.3f sec, processing time = %.3f sec, write time = %.3f sec, total time = %.3f sec  " % ( iproc, len(results), tp, tr, tw, (tp+tr+tw) )
             
     def runTimeProcessing( self, var ):
+        print "Proc %d: Running time processing." % self.iproc; sys.stdout.flush()
         operation_metadata = self.task_metadata[ 'operation' ]
-        opType = operation_metadata.get( 'type', TimeProcType.UNDEF ) 
+        opType = TimeProcType.parseTypeSpec( operation_metadata.get( 'type', TimeProcType.UNDEF ) )
         timeAxisIndex = var.getAxisIndex('time')       
         
         results = []
@@ -132,7 +136,7 @@ class TemporalProcessing(Task):
         sel = None
         grid_metadata = self.task_metadata[ 'grid' ]
         time_metadata = self.task_metadata[ 'time' ]
-        lat_bounds = grid_metadata.get( 'lat', None )
+        lat_bounds = OpDomain.parseBoundsSpec( grid_metadata.get( 'lat', None ) )
         self.time_list = time_metadata['slabs']
         self.start_time = TimeUtil.getCompTime( self.time_list[0] )
         self.slab_base_index = time_metadata['index']
@@ -140,12 +144,12 @@ class TemporalProcessing(Task):
             if not isList( lat_bounds ): sel1 = Selector( latitude=lat_bounds )
             else: sel1 = Selector( latitude=lat_bounds[0] ) if ( len( lat_bounds ) == 1 ) else Selector( latitude=lat_bounds )
             sel= sel1 if ( sel == None ) else sel & sel1
-        lon_bounds = grid_metadata.get( 'lon', None )
+        lon_bounds = OpDomain.parseBoundsSpec( grid_metadata.get( 'lon', None ) )
         if lon_bounds:
             if not isList( lon_bounds ): sel1 = Selector( longitude=lon_bounds )
             else: sel1 = Selector( longitude=lon_bounds[0] ) if ( len( lon_bounds ) == 1 ) else Selector( longitude=lon_bounds )
             sel= sel1 if ( sel == None ) else sel & sel1
-        lev_bounds = grid_metadata.get( 'lev', None )
+        lev_bounds = OpDomain.parseBoundsSpec( grid_metadata.get( 'lev', None ) )
         if lev_bounds:
             if not isList( lev_bounds ): sel1 = Selector( level=lev_bounds )
             else: sel1 = Selector( level=lev_bounds[0] ) if ( len( lev_bounds ) == 1 ) else Selector( level=lev_bounds )
@@ -161,7 +165,7 @@ class TemporalProcessing(Task):
 
 def getTask( task_spec ):
     operation_metadata = task_spec[ 'operation']
-    task_domain = operation_metadata['domain'] 
+    task_domain = OpDomain.parseDomainSpec( operation_metadata['domain'] )
     if task_domain == OpDomain.TIME: return TemporalProcessing( task_spec )   
     if task_domain == OpDomain.EXIT: return None
 

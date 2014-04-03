@@ -55,10 +55,10 @@ class ConfigFileParser:
 if __name__ == "__main__":
        
     app = ClusterCommunicator.getNodeApp( )
-    short_run = False
+    short_run = True
 
     start_time = cdtime.comptime( 1980, 1 )  
-    end_time = cdtime.comptime( 1980, 3 ) if short_run else cdtime.comptime( 1982, 1 ) 
+    end_time = cdtime.comptime( 1981, 1 ) if short_run else cdtime.comptime( 1982, 1 ) 
     
     dataset = {}    
     dataset['path'] = '/Users/tpmaxwel/Data/MERRA_hourly_2D_precip/MERRA_hourly_precip.xml'
@@ -80,7 +80,8 @@ if __name__ == "__main__":
     grid[ 'lon' ] = [ -180, 0 ]
     
     if len(sys.argv)>2 and sys.argv[1] == '-c':
-        task_metadata = ConfigFileParser( sys.argv[2] )
+        config_parser = ConfigFileParser( sys.argv[2] )
+        task_metadata = config_parser.data()
     else:
         task_metadata = {}
         task_metadata['time'] = time

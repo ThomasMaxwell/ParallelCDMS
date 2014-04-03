@@ -16,8 +16,30 @@ class TimeUtil:
         if ctime_base == None: ctime_base = ctime
         rel_units = "%s since %s" % ( cls.time_str[units], str(ctime_base) )
         return ctime.torel( rel_units, calendar )
-        
     
+    @classmethod
+    def parseTimeUnitSpec( cls, spec ):
+        if isinstance( spec, str ):
+            for iUnit in range( 1, len(cls.time_str) ):
+                if cls.time_str[iUnit][0:3] == spec.lower()[0:3]:
+                    return iUnit
+        if isinstance( spec, int ):
+            return spec
+        return None
+
+    @classmethod
+    def parseRelTimeValueSpec( cls, spec ):
+        if spec <> None:
+            if isinstance( spec, str ):
+                try: return int(spec)
+                except Exception:
+                    try: return float(spec)
+                    except Exception:
+                        print>>sys.stderr, "Error parsing RelTimeValueSpec: ", spec               
+            if isinstance( spec, int ): return spec
+            if isinstance( spec, float ): return spec
+        return None
+           
     @classmethod
     def getCDUnits( cls, str_units ):
         mstr = str_units[0:3].lower()
@@ -30,7 +52,7 @@ class TimeUtil:
     def getCompTime( cls, str_time ):
         try:
             if str_time:
-                itime = [ int( float(tok) ) for tok in str_time.replace('-',' ').replace(':',' ').split() ]
+                itime = [ int( float(tok) ) for tok in str_time.replace('-',' ').replace(':',' ').replace(',',' ').split() ]
                 return cdtime.comptime( *itime )
         except Exception, err:
             print>>sys.stderr,  "Error parsing time string '%s': %s" % ( str_time, str( err ) )
@@ -41,6 +63,35 @@ class OpDomain:
     TIME = 1
     SPACE = 2
     VARIABLES = 3
+    
+    @classmethod
+    def parseDomainSpec( cls, spec ):
+        if isinstance( spec, str ):
+            lspec = spec.lower()
+            if lspec.startswith('exit'): return cls.EXIT
+            if lspec.startswith('tim'): return cls.TIME
+            if lspec.startswith('tem'): return cls.TIME
+            if lspec.startswith('spa'): return cls.SPACE
+            if lspec.startswith('var'): return cls.VARIABLES
+        if isinstance( spec, int ):
+            return spec
+        return None
+    
+    @classmethod
+    def parseBoundsSpec( self, spec ):
+        if spec <> None:
+            if isinstance( spec, float ):
+                return spec
+            if isinstance( spec, int ):
+                return spec
+            spec_list = None
+            if isinstance( spec, str ):
+                spec_list = spec.split(',')
+            elif isinstance( spec, list ):
+                spec_list = spec
+            if spec_list:
+                return [ float(lval) for lval in spec_list ]
+        return None
 
     
 class TimeProcType:
@@ -48,7 +99,26 @@ class TimeProcType:
     SUBSET = 1
     MEAN = 2
     ANOM = 3
-    SUM = 3
+    SUM = 4
+    MAX = 5
+    MIN = 6
+    
+    @classmethod
+    def parseTypeSpec( cls, spec ):
+        if isinstance( spec, str ):
+            lspec = spec.lower()
+            if lspec.startswith('sub'): return cls.SUBSET
+            if lspec.startswith('mean'): return cls.MEAN
+            if lspec.startswith('ave'): return cls.MEAN
+            if lspec.startswith('sum'): return cls.SUM
+            if lspec.startswith('anom'): return cls.ANOM
+            if lspec.startswith('max'): return cls.MAX
+            if lspec.startswith('min'): return cls.MIN
+        if isinstance( spec, int ):
+            return spec
+        return None
+    
+    
     
 def isNone( obj ):
     return id( obj ) == id( None )

@@ -34,11 +34,11 @@ class TaskFarmer():
         time_mdata = task_metadata.get('time', None )
         start_time =   TimeUtil.getCompTime( time_mdata.get('start_time',None) )
         end_time =     TimeUtil.getCompTime( time_mdata.get('end_time',None) )
-        op_period_value =       time_mdata.get( 'period_value', None )   
-        op_period_units = time_mdata.get( 'period_units', None )
+        op_period_value = TimeUtil.parseRelTimeValueSpec( time_mdata.get( 'period_value', None ) ) 
+        op_period_units = TimeUtil.parseTimeUnitSpec( time_mdata.get( 'period_units', None ) )
         period = None if (op_period_value == None ) else ( op_period_value, op_period_units )
-        op_time_length_value =       time_mdata.get( 'time_length', None )   
-        op_time_length_units = time_mdata.get( 'time_length_units', None )
+        op_time_length_value = TimeUtil.parseRelTimeValueSpec( time_mdata.get( 'time_length', None ) )   
+        op_time_length_units = TimeUtil.parseTimeUnitSpec( time_mdata.get( 'time_length_units', None ) )
         time_length = None if (op_time_length_value == None ) else ( op_time_length_value, op_time_length_units )
         return start_time, end_time, period, time_length
                         
@@ -47,7 +47,7 @@ class TaskFarmer():
             
     def createTasks( self, task_metadata ):
         operation_metadata = task_metadata['operation']  
-        op_domain = operation_metadata['domain']  
+        op_domain = OpDomain.parseDomainSpec( operation_metadata['domain'] )
         task_specs = []     
         if op_domain == OpDomain.TIME:
             start_time, end_time, op_period, op_time_length = self.processTimeMetadata( task_metadata )                    
@@ -64,6 +64,10 @@ class TaskFarmer():
         for  task_spec in task_specs:
             if self.multithread:    self.task_queue.put_nowait( task_spec )
             else:                   self.task_controller.processTaskSpec( task_spec )
+        self.task_queue.put_nowait( self.createTerminationTask() )
+        
+    def createTerminationTask(self):
+        return { 'operation' : { 'domain' : 'exit' } }
                   
 class TaskController( threading.Thread ):
 
@@ -136,11 +140,13 @@ class TaskExecutable( threading.Thread ):
                 if rv == -1: return
 
             elif self.task_allocation_method == TaskAllocationMethod.ROUND_ROBIN:
-                task_spec = self.comm.recv( root = 0, tag=11 )
+                task_spec = self.comm.recv( source = 0, tag=11 )
                 rv = self.processTaskSpec( task_spec )
                 if rv == -1: return
-
-
+                
+    def execute(self, task_metadata ):
+        self.task_metadata = task_metadata
+        self.start()
 
     def processTaskSpec( self, task_spec ):
         task = getTask( task_spec )
