@@ -31,8 +31,8 @@ class TaskMapper:
             t0 = t0.add( *slice_period )
             if t0.cmp( end_time ) > 0: break                 
 
-        nslices = len( time_slices )
-        n_worker_procs = self.nprocs - 1
+        nslices = len( time_slices ) - 1
+        n_worker_procs = self.nprocs - 1 if (self.nprocs > 1) else 1
         if nslices > n_worker_procs:
             nexcess_slices = nslices / n_worker_procs 
             nexcess_slices_rem = nslices - nexcess_slices*n_worker_procs - 1
@@ -47,7 +47,7 @@ class TaskMapper:
                 nslices = nslice_map[ iProc ] 
                 slice_spec_start = time_slices[ slice_index ]
                 time_list = [ serializeSpec( slice_spec_start ) ]
-                n_additional_slices = nslices-1 if (slice_length == None) else nslices-2
+                n_additional_slices = nslices if (slice_length == None) else nslices-1
                 for iSlice in range( n_additional_slices ):
                     slice_spec = time_slices[ slice_index + iSlice + 1 ]
                     time_list.append( serializeSpec( slice_spec ) )
@@ -61,11 +61,11 @@ class TaskMapper:
 if __name__ == "__main__":
     test_number = 0
     
-    tm = TaskMapper( 10 )
+    tm = TaskMapper( 3 )
     
     if test_number == 0:
-        start_time = cdtime.comptime( 1996, 2 ) 
-        end_time = cdtime.comptime( 1997, 2 )     
+        start_time = cdtime.comptime( 1980, 1 )  
+        end_time = cdtime.comptime( 1981, 1 ) 
         slice_period = ( 1, cdtime.Month )        
         decomp = tm.getTimeDecomposition( start_time, end_time, slice_period )
         

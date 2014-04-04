@@ -58,7 +58,7 @@ if __name__ == "__main__":
     short_run = True
 
     start_time = cdtime.comptime( 1980, 1 )  
-    end_time = cdtime.comptime( 1981, 1 ) if short_run else cdtime.comptime( 1982, 1 ) 
+    end_time = cdtime.comptime( 1981, 1 ) if short_run else cdtime.comptime( 1981, 12 ) 
     
     dataset = {}    
     dataset['path'] = '/Users/tpmaxwel/Data/MERRA_hourly_2D_precip/MERRA_hourly_precip.xml'
@@ -79,15 +79,11 @@ if __name__ == "__main__":
     grid['lat'] = [ 40, 80 ]
     grid[ 'lon' ] = [ -180, 0 ]
     
-    if len(sys.argv)>2 and sys.argv[1] == '-c':
-        config_parser = ConfigFileParser( sys.argv[2] )
-        task_metadata = config_parser.data()
-    else:
-        task_metadata = {}
-        task_metadata['time'] = time
-        task_metadata['grid'] = grid
-        task_metadata['dataset'] = dataset
-        task_metadata['operation'] = operation
+    task_metadata = {}
+    task_metadata['time'] = time
+    task_metadata['grid'] = grid
+    task_metadata['dataset'] = dataset
+    task_metadata['operation'] = operation
         
     app.execute( task_metadata )
    

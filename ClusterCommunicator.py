@@ -6,8 +6,7 @@ Created on Jan 13, 2014
 
 from mpi4py import MPI
 from Queue import Queue
-import cdutil, cdtime
-import time, threading, sys, os
+import threading, copy
 from Utilities import *
 from Tasks import Task, getTask
 from TaskMapper import TaskMapper
@@ -53,14 +52,18 @@ class TaskFarmer():
             start_time, end_time, op_period, op_time_length = self.processTimeMetadata( task_metadata )                    
             time_decomp = self.taskMapper.getTimeDecomposition( start_time, end_time, op_period, op_time_length )
             for ( time_slab, slab_index ) in time_decomp:
-                time_metadata = task_metadata[ 'time' ]
-                time_metadata['slabs'] = time_slab 
-                time_metadata['index'] = slab_index 
-                task_specs.append( task_metadata )               
+                task_spec = copy.deepcopy( task_metadata )
+                time_metadata = task_spec.get( 'time', None )
+                if time_metadata:
+                    time_metadata['slabs'] = time_slab 
+                    time_metadata['index'] = slab_index 
+                task_specs.append( task_spec )             
         return task_specs;
                            
     def execute( self, task_metadata ): 
         task_specs = self.createTasks( task_metadata )
+#         print "Processing task list: "
+#         for task_spec in task_specs: print str( Task.getSlabList(task_spec) )
         for  task_spec in task_specs:
             if self.multithread:    self.task_queue.put_nowait( task_spec )
             else:                   self.task_controller.processTaskSpec( task_spec )
@@ -92,6 +95,7 @@ class TaskController( threading.Thread ):
             iproc = iproc + 1
             if iproc == self.size: iproc = 1
             task = self.work_queue.get()
+#            print "IP-%d: Processing slabs: %s " % ( iproc, Task.getSlabList(task) )
             
             if self.size == 1:                
                 self.local_task_exec.processTaskSpec( task )               
@@ -149,7 +153,7 @@ class TaskExecutable( threading.Thread ):
         self.start()
 
     def processTaskSpec( self, task_spec ):
-        print "Processor %d: Processing task spec: " % self.rank, str( task_spec )
+        print "Processor %d: Processing slabs: " % self.rank, str( Task.getSlabList(task_spec) )
         task = getTask( task_spec )
         if task: return task.map( self.rank, self.size )
         return -1

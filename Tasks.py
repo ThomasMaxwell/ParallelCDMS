@@ -6,6 +6,7 @@ Created on Mar 27, 2014
 import cdutil, cdms2, os, numpy, copy, time
 from cdms2.selectors import Selector
 from Utilities import *
+cdms2.setCompressionWarnings(False)
 
 def recoverLostDim( array, dim_index ):  
     shape = list( array.shape )
@@ -25,6 +26,12 @@ class Task:
         
     def reduce( self, data_array ):
         return None
+    
+    @classmethod
+    def getSlabList( cls, task_spec ):
+        time_metadata =  task_spec.get( 'time', None )
+        if time_metadata == None: return " !! %s !!" % str( task_spec )
+        return time_metadata.get( 'slabs', "[]")
 
 class TemporalProcessing(Task):
     
@@ -45,7 +52,7 @@ class TemporalProcessing(Task):
                     period_value = TimeUtil.parseRelTimeValueSpec( time_metadata[ 'period_value' ] )
                     time_length_value = TimeUtil.parseRelTimeValueSpec( time_metadata.get( 'time_length', period_value ) )  
                     time_length_units = TimeUtil.parseTimeUnitSpec( time_metadata.get( 'time_length_units', period_units ) )
-                    rdt0 = TimeUtil.getRelTime( timestamp, period_units, self.start_time, axis.getCalendar() )
+                    rdt0 = TimeUtil.getRelTime( timestamp, period_units, self.global_start_time, axis.getCalendar() )
                     rdt1 = rdt0.add( time_length_value, time_length_units )
                     time_data = numpy.array(  [ rdt0.value ], dtype=numpy.float )
                     bounds = numpy.asarray(  [ ( rdt0.value, rdt1.value ) ], dtype=numpy.float )
@@ -62,8 +69,9 @@ class TemporalProcessing(Task):
     def map( self, iproc, nprocs ):
         self.iproc = iproc
         self.nprocs = nprocs
-        print "Proc %d: Mapping Task." % iproc; sys.stdout.flush()
+#        print "Proc %d: Mapping Task." % iproc; sys.stdout.flush()
         tp0 = time.clock()
+        self.processTimeMetadata()
         dataset_metadata = self.task_metadata[ 'dataset' ]
         dataset_path = dataset_metadata.get( 'path', None )
         operation_metadata = self.task_metadata[ 'operation' ]
@@ -76,7 +84,7 @@ class TemporalProcessing(Task):
         if sel: var = var(sel)
         tp1 = time.clock()
         tp = tp1 - tp0
-        print "Proc %d: Done Mapping Task, time = %.3f" % ( iproc, tp ); sys.stdout.flush()               
+#        print "Proc %d: Done Mapping Task, time = %.3f" % ( iproc, tp ); sys.stdout.flush()               
         
         tr0 = time.clock()
         results = self.runTimeProcessing( var )
@@ -99,7 +107,7 @@ class TemporalProcessing(Task):
         print "Proc %d:  Computed result, nslabs = %d, data prep time = %.3f sec, processing time = %.3f sec, write time = %.3f sec, total time = %.3f sec  " % ( iproc, len(results), tp, tr, tw, (tp+tr+tw) )
             
     def runTimeProcessing( self, var ):
-        print "Proc %d: Running time processing." % self.iproc; sys.stdout.flush()
+#        print "Proc %d: Running time processing." % self.iproc; sys.stdout.flush()
         operation_metadata = self.task_metadata[ 'operation' ]
         opType = TimeProcType.parseTypeSpec( operation_metadata.get( 'type', TimeProcType.UNDEF ) )
         timeAxisIndex = var.getAxisIndex('time')       
@@ -131,15 +139,18 @@ class TemporalProcessing(Task):
                 results.append( ( t0.replace(' ','_').replace(':','-'), rvar ) )
             
         return results
+    
+    def processTimeMetadata(self):
+        time_metadata = self.task_metadata[ 'time' ]
+        self.time_list = time_metadata['slabs']
+        self.start_time = TimeUtil.getCompTime( self.time_list[0] )
+        self.slab_base_index = time_metadata['index']
+        self.global_start_time = TimeUtil.getCompTime( time_metadata['start_time'] )
                
     def getSelector(self):  
         sel = None
         grid_metadata = self.task_metadata[ 'grid' ]
-        time_metadata = self.task_metadata[ 'time' ]
         lat_bounds = OpDomain.parseBoundsSpec( grid_metadata.get( 'lat', None ) )
-        self.time_list = time_metadata['slabs']
-        self.start_time = TimeUtil.getCompTime( self.time_list[0] )
-        self.slab_base_index = time_metadata['index']
         if lat_bounds:
             if not isList( lat_bounds ): sel1 = Selector( latitude=lat_bounds )
             else: sel1 = Selector( latitude=lat_bounds[0] ) if ( len( lat_bounds ) == 1 ) else Selector( latitude=lat_bounds )
