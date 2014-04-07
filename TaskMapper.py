@@ -56,7 +56,7 @@ class TaskMapper:
             except Exception, err:
                 print str(err)
                             
-        return decomp
+        return decomp, nslice_map
 
 if __name__ == "__main__":
     test_number = 0

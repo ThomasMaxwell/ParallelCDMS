@@ -58,7 +58,7 @@ if __name__ == "__main__":
     short_run = True
 
     start_time = cdtime.comptime( 1980, 1 )  
-    end_time = cdtime.comptime( 1981, 1 ) if short_run else cdtime.comptime( 1981, 12 ) 
+    end_time = cdtime.comptime( 1980, 7 ) if short_run else cdtime.comptime( 1981, 12 ) 
     
     dataset = {}    
     dataset['path'] = '/Users/tpmaxwel/Data/MERRA_hourly_2D_precip/MERRA_hourly_precip.xml'
@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
     operation = {}    
     operation['domain'] = OpDomain.TIME
-    operation['type'] = TimeProcType.SUM   
+    operation['type'] =   'sum'   
     operation[ 'name' ] = 'MERRA_precip_monthly_totals'
 
     time = {} 

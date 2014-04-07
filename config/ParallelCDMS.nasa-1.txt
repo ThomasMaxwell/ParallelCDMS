@@ -12,7 +12,7 @@
 [time]
 
    start_time =  1980, 1
-   end_time = 1981, 1 
+   end_time = 1980, 7 
    period_value = 1 
    period_units = month
 

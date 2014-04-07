@@ -8,7 +8,7 @@ from mpi4py import MPI
 from Queue import Queue
 import threading, copy
 from Utilities import *
-from Tasks import Task, getTask
+from Tasks import Task
 from TaskMapper import TaskMapper
 
 class TaskAllocationMethod:
@@ -50,13 +50,14 @@ class TaskFarmer():
         task_specs = []     
         if op_domain == OpDomain.TIME:
             start_time, end_time, op_period, op_time_length = self.processTimeMetadata( task_metadata )                    
-            time_decomp = self.taskMapper.getTimeDecomposition( start_time, end_time, op_period, op_time_length )
+            time_decomp, nslab_map = self.taskMapper.getTimeDecomposition( start_time, end_time, op_period, op_time_length )
             for ( time_slab, slab_index ) in time_decomp:
                 task_spec = copy.deepcopy( task_metadata )
                 time_metadata = task_spec.get( 'time', None )
                 if time_metadata:
                     time_metadata['slabs'] = time_slab 
                     time_metadata['index'] = slab_index 
+                    time_metadata['nslab_map'] = nslab_map 
                 task_specs.append( task_spec )             
         return task_specs;
                            
@@ -154,7 +155,7 @@ class TaskExecutable( threading.Thread ):
 
     def processTaskSpec( self, task_spec ):
         print "Processor %d: Processing slabs: " % self.rank, str( Task.getSlabList(task_spec) )
-        task = getTask( task_spec )
+        task = Task.getTaskFromSpec( task_spec )
         if task: return task.map( self.rank, self.size )
         return -1
             
