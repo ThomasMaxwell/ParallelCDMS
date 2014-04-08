@@ -3,7 +3,7 @@ Created on Mar 27, 2014
 
 @author: tpmaxwel
 '''
-import cdutil, cdms2, os, numpy, copy, time
+import cdutil, cdms2, os, numpy, copy, time, itertools
 from mpi4py import MPI
 from cdms2.selectors import Selector
 from Utilities import *
@@ -26,31 +26,21 @@ def getBaseSizeAndShape( shape, time_index ):
     return prod, base_shape
         
 class Task:
+
     
-    task_comm = None
-    
-    def __init__(self, local_metadata ): 
+    def __init__(self, task_spec, local_metadata = {} ): 
         self.metadata = local_metadata
-        if Task.task_comm == None:
-            gcomm = MPI.COMM_WORLD
-            rank = gcomm.Get_rank() 
-            color = MPI.UNDEFINED if rank==0 else 1           
-            Task.task_comm = gcomm.Split( color, rank-1 )
+        self.task_metadata = task_spec 
+        self.vars = {}
         
     def __getitem__(self, key):
         return self.metadata.get( key, None )
     
-    def map( self, iproc, nprocs ):
+    def map( self, global_comm, task_comm ):
         pass
         
     def reduce( self, data_array ):
         return None
-    
-    @classmethod
-    def getSlabList( cls, task_spec ):
-        time_metadata =  task_spec.get( 'time', None )
-        if time_metadata == None: return " !! %s !!" % str( task_spec )
-        return time_metadata.get( 'slabs', "[]")
 
     @classmethod
     def getTaskFromSpec( cls, task_spec ):
@@ -96,46 +86,105 @@ class TemporalProcessing(Task):
             cls.taskmap[ task_name ] = task_class 
     
     def __init__(self, task_spec, local_metadata={} ): 
-        Task.__init__( self, local_metadata ) 
-        self.task_metadata = task_spec 
-        
-    def getReducedAxes( self, slab_var, timestamps, reduced_axis_size=1 ):
+        Task.__init__( self, task_spec, local_metadata ) 
+
+    def getAxes( self, slab_var, slabs = None ):
         axes = []
         for iAxis in range( slab_var.rank() ):
             axis =  slab_var.getAxis( iAxis )
             if axis.isTime():
-                if ( reduced_axis_size == len( axis ) ):
-                    axes.append( axis )
-                elif ( reduced_axis_size == 1 ):
-                    time_metadata = self.task_metadata[ 'time' ]
-                    period_units = TimeUtil.parseTimeUnitSpec( time_metadata[ 'period_units' ] )
-                    period_value = TimeUtil.parseRelTimeValueSpec( time_metadata[ 'period_value' ] )
-                    time_length_value = TimeUtil.parseRelTimeValueSpec( time_metadata.get( 'time_length', period_value ) )  
-                    time_length_units = TimeUtil.parseTimeUnitSpec( time_metadata.get( 'time_length_units', period_units ) )
-                    time_data = []
-                    bounds = []
-                    for timestamp in timestamps:
+                time_metadata = self.task_metadata[ 'time' ]
+                period_units = TimeUtil.parseTimeUnitSpec( time_metadata[ 'period_units' ] )
+                period_value = TimeUtil.parseRelTimeValueSpec( time_metadata[ 'period_value' ] )
+                time_length_value = TimeUtil.parseRelTimeValueSpec( time_metadata.get( 'time_length', period_value ) )  
+                time_length_units = TimeUtil.parseTimeUnitSpec( time_metadata.get( 'time_length_units', period_units ) )
+                time_data = []
+                bounds = []
+                if slabs == None:
+                    slabs = [ slab[0:-1] for slab in self.slab_list ]
+                for slab in slabs:
+                    if not isList( slab ): slab = [ slab ]
+                    for timestamp in slab:
                         rdt0 = TimeUtil.getRelTime( timestamp, period_units, self.global_start_time, axis.getCalendar() )
                         rdt1 = rdt0.add( time_length_value, time_length_units )
                         time_data.append( rdt0.value )
                         bounds.append(  ( rdt0.value, rdt1.value )  )
-                    np_time_data = numpy.array(  time_data, dtype=numpy.float ) 
-                    np_bounds = numpy.array(  bounds, dtype=numpy.float ) 
-                    newTimeAxis = cdms2.createAxis( np_time_data, np_bounds )
-                    newTimeAxis.designateTime( 0, axis.getCalendar() )
-                    newTimeAxis.id = "Time"
-                    newTimeAxis.units = rdt0.units
-                    axes.append( newTimeAxis )
+                np_time_data = numpy.array(  time_data, dtype=numpy.float ) 
+                np_bounds = numpy.array(  bounds, dtype=numpy.float ) 
+                newTimeAxis = cdms2.createAxis( np_time_data, np_bounds )
+                newTimeAxis.designateTime( 0, axis.getCalendar() )
+                newTimeAxis.id = "Time"
+                newTimeAxis.units = rdt0.units
+                axes.append( newTimeAxis )
             else:
                 axes.append( axis ) 
         return axes
-                     
+        
+#     def getReducedAxes( self, slab_var, timestamps, reduced_axis_size=1 ):
+#         axes = []
+#         for iAxis in range( slab_var.rank() ):
+#             axis =  slab_var.getAxis( iAxis )
+#             if axis.isTime():
+#                 if ( reduced_axis_size == len( axis ) ):
+#                     axes.append( axis )
+#                 else:
+#                     time_metadata = self.task_metadata[ 'time' ]
+#                     period_units = TimeUtil.parseTimeUnitSpec( time_metadata[ 'period_units' ] )
+#                     period_value = TimeUtil.parseRelTimeValueSpec( time_metadata[ 'period_value' ] )
+#                     time_length_value = TimeUtil.parseRelTimeValueSpec( time_metadata.get( 'time_length', period_value ) )  
+#                     time_length_units = TimeUtil.parseTimeUnitSpec( time_metadata.get( 'time_length_units', period_units ) )
+#                     time_data = []
+#                     bounds = []
+#                     for timestamp in timestamps:
+#                         rdt0 = TimeUtil.getRelTime( timestamp, period_units, self.global_start_time, axis.getCalendar() )
+#                         rdt1 = rdt0.add( time_length_value, time_length_units )
+#                         time_data.append( rdt0.value )
+#                         bounds.append(  ( rdt0.value, rdt1.value )  )
+#                     np_time_data = numpy.array(  time_data, dtype=numpy.float ) 
+#                     np_bounds = numpy.array(  bounds, dtype=numpy.float ) 
+#                     newTimeAxis = cdms2.createAxis( np_time_data, np_bounds )
+#                     newTimeAxis.designateTime( 0, axis.getCalendar() )
+#                     newTimeAxis.id = "Time"
+#                     newTimeAxis.units = rdt0.units
+#                     axes.append( newTimeAxis )
+#             else:
+#                 axes.append( axis ) 
+#         return axes
+#  
+#     def getGatheredAxes( self, slab_var ):
+#         axes = []
+#         for iAxis in range( slab_var.rank() ):
+#             axis =  slab_var.getAxis( iAxis )
+#             if axis.isTime():
+#                 time_metadata = self.task_metadata[ 'time' ]
+#                 period_units = TimeUtil.parseTimeUnitSpec( time_metadata[ 'period_units' ] )
+#                 period_value = TimeUtil.parseRelTimeValueSpec( time_metadata[ 'period_value' ] )
+#                 time_length_value = TimeUtil.parseRelTimeValueSpec( time_metadata.get( 'time_length', period_value ) )  
+#                 time_length_units = TimeUtil.parseTimeUnitSpec( time_metadata.get( 'time_length_units', period_units ) )
+#                 time_data = []
+#                 bounds = []
+#                 for slab in self.slab_list:
+#                     for timestamp in slab[0:-1]:
+#                         rdt0 = TimeUtil.getRelTime( timestamp, period_units, self.global_start_time, axis.getCalendar() )
+#                         rdt1 = rdt0.add( time_length_value, time_length_units )
+#                         time_data.append( rdt0.value )
+#                         bounds.append(  ( rdt0.value, rdt1.value )  )
+#                 np_time_data = numpy.array(  time_data, dtype=numpy.float ) 
+#                 np_bounds = numpy.array(  bounds, dtype=numpy.float ) 
+#                 newTimeAxis = cdms2.createAxis( np_time_data, np_bounds )
+#                 newTimeAxis.designateTime( 0, axis.getCalendar() )
+#                 newTimeAxis.id = "Time"
+#                 newTimeAxis.units = rdt0.units
+#                 axes.append( newTimeAxis )
+#             else:
+#                 axes.append( axis ) 
+#         return axes
+                    
 
-    def map( self, iproc, nprocs ):
-        self.iproc = iproc
-        self.nprocs = nprocs
-        merge_timesteps = True
-        print "Proc %d: Mapping Task." % iproc; sys.stdout.flush()
+    def map( self, global_comm, task_comm ):
+        self.task_comm = task_comm
+        self.global_comm = global_comm
+        merge_timesteps = False
         tp0 = time.clock()
         self.processTimeMetadata()
         dataset_metadata = self.task_metadata[ 'dataset' ]
@@ -146,23 +195,20 @@ class TemporalProcessing(Task):
         var_name = dataset_metadata.get( 'variable', None )
         ds = cdms2.open( dataset_path )
         var = ds[ var_name ]
+        self.vars[ var_name] = var
         sel = self.getSelector()
         if sel: var = var(sel)
         tp1 = time.clock()
         tp = tp1 - tp0
-        print "Proc %d: Done Mapping Task, time = %.3f" % ( iproc, tp ); sys.stdout.flush()               
+        print "Proc %d: Done Mapping Task, time = %.3f" % ( global_comm.Get_rank(), tp ); sys.stdout.flush()               
         
         tr0 = time.clock()
         results = self.runTimeProcessing( var, merge_timesteps )
         tr1 = time.clock()
         tr = tr1 - tr0
-        
-        if merge_timesteps and ( nprocs > 1 ):
-            merged_results = self.merge( results )
-            results = [ merged_results ]
 
         tw0 = time.clock()
-        global_time_index = self.slab_base_index
+        global_time_index = self.slab_base_time_index
         output_path = os.path.join( output_dir, output_name )
         for ( timestamp, result_var ) in results:
             outfilename = "%s-%s.nc" % ( output_path, str(timestamp) )
@@ -171,38 +217,13 @@ class TemporalProcessing(Task):
             global_time_index = global_time_index + 1
             outfile.close()
             time_axis = result_var.getTime()
-            print "Proc %d: Wrote %s slab to file %s, time values = %s %s" % ( iproc, str(result_var.shape), outfilename, str( time_axis.getValue() ), time_axis.units )
+            print "Proc %d: Wrote %s slab to file %s, time values = %s %s" % ( global_comm.Get_rank(), str(result_var.shape), outfilename, str( time_axis.getValue() ), time_axis.units )
         tw1 = time.clock()
         tw = tw1 - tw0
-        print "Proc %d:  Computed result, nslabs = %d, data prep time = %.3f sec, processing time = %.3f sec, write time = %.3f sec, total time = %.3f sec  " % ( iproc, len(results), tp, tr, tw, (tp+tr+tw) )
+        print "Proc %d:  Computed result, nslabs = %d, data prep time = %.3f sec, processing time = %.3f sec, write time = %.3f sec, total time = %.3f sec  " % ( global_comm.Get_rank(), len(results), tp, tr, tw, (tp+tr+tw) )
             
-#     def runTimeProcessing1( self, var ):
-# #        print "Proc %d: Running time processing." % self.iproc; sys.stdout.flush()
-#         operation_metadata = self.task_metadata[ 'operation' ]
-#         self.timeAxisIndex = var.getAxisIndex('time')       
-#         
-#         results = []
-#         has_bounds =  isinstance( self.time_list[0], tuple )
-#         num_steps = len( self.time_list ) if has_bounds else len( self.time_list ) - 1
-#         
-#         result = None
-#         time_steps = []
-#         for iTime in range( num_steps ):
-#             spec = self.time_list[iTime]
-#             ( t0, t1 ) = spec if has_bounds else ( spec, self.time_list[iTime+1] )  
-#             slice_var = var( time=(t0,t1,'co')  )
-#             slice_array = numpy.ma.array( slice_var.data, mask=slice_var.mask )
-#                
-#             result = recoverLostDim( self.processDataSlice( slice_array ), self.timeAxisIndex, var.rank() )
-#                 
-#             if not isNone(result): 
-#                 rvar = cdms2.createVariable( result, id=var.id, copy=0, axes=self.getReducedAxes( slice_var, t0, result.shape[ self.timeAxisIndex ] ) )
-#                 results.append( ( t0.replace(' ','_').replace(':','-'), rvar ) )
-#             
-#         return results
-
     def runTimeProcessing( self, var, mergeResults = False ):
-        print "Proc %d: Running time processing." % self.iproc; sys.stdout.flush()
+#        print "Proc %d: Running time processing." % self.task_comm.Get_rank(); sys.stdout.flush()
         operation_metadata = self.task_metadata[ 'operation' ]
         self.timeAxisIndex = var.getAxisIndex('time')       
         
@@ -218,7 +239,7 @@ class TemporalProcessing(Task):
             slice_var = var( time=(t0,t1,'co')  )
             slice_array = numpy.ma.array( slice_var.data, mask=slice_var.mask )
              
-            print "Proc %d: processDataSlice[%d]." % ( self.iproc, iTime ); sys.stdout.flush()
+            print "Proc %d: processDataSlice[%d]." % ( self.global_comm.Get_rank(), iTime ); sys.stdout.flush()
             processedData = self.processDataSlice( slice_array )  
             result = recoverLostDim( processedData, self.timeAxisIndex, var.rank() )
             
@@ -227,13 +248,16 @@ class TemporalProcessing(Task):
                     results.append( result )
                     time_steps.append( t0 )
                 else:
-                    rvar = cdms2.createVariable( result, id=var.id, copy=0, axes=self.getReducedAxes( slice_var, [ t0 ], result.shape[ self.timeAxisIndex ] ) )
+                    rvar = cdms2.createVariable( result, id=var.id, copy=0, axes=self.getAxes( slice_var, [ t0 ] ) )
                     results.append( ( t0.replace(' ','_').replace(':','-'), rvar ) )
        
         if mergeResults:    
             merged_result = numpy.concatenate( results, self.timeAxisIndex ) 
-            gathered_result = merged_result # self.gather( merged_result )         
-            rvar = cdms2.createVariable( gathered_result, id=var.id, copy=0, axes=self.getReducedAxes( slice_var, time_steps, results[0].shape[ self.timeAxisIndex ] ) ) 
+            if self.task_comm == None:
+                rvar = cdms2.createVariable( merged_result, id=var.id, copy=0, axes=self.getAxes( slice_var) ) 
+            else:
+                gathered_result = self.gather( merged_result )     
+                rvar = cdms2.createVariable( gathered_result, id=var.id, copy=0, axes=self.getAxes( slice_var) ) 
             results = [ ( time_steps[0].replace(' ','_').replace(':','-'), rvar ) ]
                            
         return results
@@ -241,9 +265,11 @@ class TemporalProcessing(Task):
     
     def processTimeMetadata(self):
         time_metadata = self.task_metadata[ 'time' ]
-        self.time_list = time_metadata['slabs']
+        self.slab_base_time_index = time_metadata['time_base_index']
+        self.slab_index = time_metadata['slab_index']
+        self.slab_list = time_metadata['slabs']
+        self.time_list = self.slab_list[ self.slab_index ]
         self.start_time = TimeUtil.getCompTime( self.time_list[0] )
-        self.slab_base_index = time_metadata['index']
         self.nslab_map = numpy.array( time_metadata['nslab_map'], dtype='i') 
         self.global_start_time = TimeUtil.getCompTime( time_metadata['start_time'] )
                
@@ -275,13 +301,14 @@ class TemporalProcessing(Task):
     def gather( self, data_array, proc_index = -1 ):
         new_shape = numpy.array( data_array.shape, dtype = 'f', copy=True )
         base_size, base_shape = getBaseSizeAndShape( data_array.shape, self.timeAxisIndex )
-        nslabs = self.nslab_map.prod()
+        nslabs = self.nslab_map.sum()
+        print "Gather: base_size = %s, base_shape = %s, nslab_map = %s, nslabs = %s "  % ( str(base_size), str(base_shape), str(self.nslab_map), str(nslabs) )      
         new_shape[ self.timeAxisIndex ] = nslabs
         gathered_array = numpy.empty( [ new_shape.prod() ], dtype='f' )
         if proc_index < 0:
-            Task.task_comm.AllGatherv( sendbuf=[ data_array.flat(), MPI.FLOAT ], recvbuf=[ gathered_array, (self.nslab_map*base_size, None), MPI.FLOAT] )
+            self.task_comm.Allgatherv( sendbuf=[ data_array.flatten(), MPI.FLOAT ], recvbuf=[ gathered_array, (self.nslab_map*base_size, None), MPI.FLOAT] )
         else: 
-            Task.task_comm.Gatherv( sendbuf=[ data_array.flat(), MPI.FLOAT ], recvbuf=[ gathered_array, (self.nslab_map*base_size, None), MPI.FLOAT], root=proc_index )
+            self.task_comm.Gatherv( sendbuf=[ data_array.flatten(), MPI.FLOAT ], recvbuf=[ gathered_array, (self.nslab_map*base_size, None), MPI.FLOAT], root=proc_index )
         result = None
         if (proc_index < 0) or ( proc_index == Task.task_comm.Get_rank() ):
             if self.timeAxisIndex == 0:

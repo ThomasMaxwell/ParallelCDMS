@@ -51,20 +51,20 @@ class TaskFarmer():
         if op_domain == OpDomain.TIME:
             start_time, end_time, op_period, op_time_length = self.processTimeMetadata( task_metadata )                    
             time_decomp, nslab_map = self.taskMapper.getTimeDecomposition( start_time, end_time, op_period, op_time_length )
-            for ( time_slab, slab_index ) in time_decomp:
+            slab_list = [ time_slab for ( time_slab, slab_index ) in time_decomp ]
+            for slab_index, ( time_slab, time_base_index ) in enumerate(time_decomp):
                 task_spec = copy.deepcopy( task_metadata )
                 time_metadata = task_spec.get( 'time', None )
                 if time_metadata:
-                    time_metadata['slabs'] = time_slab 
-                    time_metadata['index'] = slab_index 
+                    time_metadata['time_base_index'] = time_base_index 
+                    time_metadata['slab_index'] = slab_index 
                     time_metadata['nslab_map'] = nslab_map 
+                    time_metadata['slabs'] = slab_list 
                 task_specs.append( task_spec )             
         return task_specs;
                            
     def execute( self, task_metadata ): 
         task_specs = self.createTasks( task_metadata )
-#         print "Processing task list: "
-#         for task_spec in task_specs: print str( Task.getSlabList(task_spec) )
         for  task_spec in task_specs:
             if self.multithread:    self.task_queue.put_nowait( task_spec )
             else:                   self.task_controller.processTaskSpec( task_spec )
@@ -80,7 +80,7 @@ class TaskController( threading.Thread ):
         self.comm = comm
         self.rank = self.comm.Get_rank() if self.comm else 0
         self.size = self.comm.Get_size() if self.comm else 1
-        self.local_task_exec = None if self.size > 1 else TaskExecutable()
+        self.local_task_exec = None if self.size > 1 else TaskExecutable( self.comm )
         self.work_queue = queue
         self.active = True
         self.task_allocation_method = TaskAllocationMethod.ROUND_ROBIN
@@ -96,7 +96,6 @@ class TaskController( threading.Thread ):
             iproc = iproc + 1
             if iproc == self.size: iproc = 1
             task = self.work_queue.get()
-#            print "IP-%d: Processing slabs: %s " % ( iproc, Task.getSlabList(task) )
             
             if self.size == 1:                
                 self.local_task_exec.processTaskSpec( task )               
@@ -124,11 +123,12 @@ class TaskController( threading.Thread ):
    
 class TaskExecutable( threading.Thread ):
 
-    def __init__(self, comm=None, **args ): 
+    def __init__(self, global_comm=None, task_comm=None, **args ): 
         super( TaskExecutable, self ).__init__()      
-        self.comm = comm
-        self.rank = self.comm.Get_rank() if self.comm else 0 
-        self.size = self.comm.Get_size() if self.comm else 1 
+        self.global_comm = global_comm
+        self.task_comm = task_comm
+        self.rank = self.global_comm.Get_rank() if self.global_comm else 0 
+        self.size = self.global_comm.Get_size() if self.global_comm else 1 
         self.task_allocation_method = TaskAllocationMethod.ROUND_ROBIN
         self.metadata = args
         self.active = True
@@ -140,12 +140,12 @@ class TaskExecutable( threading.Thread ):
         while self.active:
             task = None
             if self.task_allocation_method == TaskAllocationMethod.BROADCAST:
-                task_spec = self.comm.bcast( task, root = 0 )
+                task_spec = self.global_comm.bcast( task, root = 0 )
                 rv = self.processTaskSpec( task_spec )
                 if rv == -1: return
 
             elif self.task_allocation_method == TaskAllocationMethod.ROUND_ROBIN:
-                task_spec = self.comm.recv( source = 0, tag=11 )
+                task_spec = self.global_comm.recv( source = 0, tag=11 )
                 rv = self.processTaskSpec( task_spec )
                 if rv == -1: return
                 
@@ -154,14 +154,16 @@ class TaskExecutable( threading.Thread ):
         self.start()
 
     def processTaskSpec( self, task_spec ):
-        print "Processor %d: Processing slabs: " % self.rank, str( Task.getSlabList(task_spec) )
         task = Task.getTaskFromSpec( task_spec )
-        if task: return task.map( self.rank, self.size )
+        if task: return task.map( self.global_comm, self.task_comm )
         return -1
             
 def getNodeApp(**args):
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    if ( not 'multithread' in args ):  args['multithread' ] = ( comm.size > 1 )
-    hcomm = TaskFarmer(comm, **args) if ( rank == 0 ) else TaskExecutable( comm, **args )
+    global_comm = MPI.COMM_WORLD
+    rank = global_comm.Get_rank()
+    nprocs = global_comm.Get_size()
+    if ( not 'multithread' in args ):  args['multithread' ] = ( global_comm.size > 1 )
+    color = MPI.UNDEFINED if rank==0 else 1           
+    task_comm = global_comm.Split( color, rank-1 ) if nprocs > 2 else None
+    hcomm = TaskFarmer(global_comm, **args) if ( rank == 0 ) else TaskExecutable( global_comm, task_comm, **args )
     return hcomm
