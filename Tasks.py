@@ -96,39 +96,43 @@ class TemporalProcessing(Task):
                 axes.append( newTimeAxis )
             else:
                 axes.append( axis ) 
-        return axes                    
-
-    def map( self, global_comm, task_comm ):
+        return axes 
+    
+    def getPVar( self, var_name, global_comm, task_comm ):                   
         dataset_metadata = self.task_metadata[ 'dataset' ]
         dataset_path = dataset_metadata.get( 'path', None )
-        operation_metadata = self.task_metadata[ 'operation' ]
-        output_name = operation_metadata.get( 'name', "TemporalProcessing"  )
-        output_dir = operation_metadata.get( 'dir', os.path.dirname( dataset_path )  )
-        var_name = dataset_metadata.get( 'variable', None )
         time_specs = self.task_metadata[ 'time' ]
         grid_specs = self.task_metadata[ 'grid' ]        
-        tr0 = time.clock()
-        
         pvar = PVariable( task_comm, var_name, dataset_path, time_specs, grid_specs, global_comm = global_comm )
+        return pvar
+
+    def map( self, global_comm, task_comm ):
+        tr0 = time.clock()        
+
+        dataset_metadata = self.task_metadata[ 'dataset' ]
+        var_name = dataset_metadata.get( 'variable', None )
+        
+        pvar = self.getPVar( var_name, global_comm, task_comm )        
         pvar.execute( TemporalSum(), False )
         
         tr1 = time.clock()
         tr = tr1 - tr0
         tw0 = time.clock()       
-        self.writeResults( output_dir, output_name, pvar )
+        self.writeResults( pvar )
         tw1 = time.clock()
         tw = tw1 - tw0
         print "Proc %d:  Computed result, nslabs = %d, processing time = %.3f sec, write time = %.3f sec, total time = %.3f sec  " % ( global_comm.Get_rank(), pvar.len(), tr, tw, (tr+tw) )
             
-    def writeResults( self, output_dir, output_name, pvar ):
-        global_time_index = pvar.getBaseTimeIndex()
+    def writeResults( self, pvar ):
+        operation_metadata = self.task_metadata[ 'operation' ]
+        output_name = operation_metadata.get( 'name', "TemporalProcessing"  )
+        output_dir = operation_metadata.get( 'dir', os.path.dirname( pvar.dataset_path )  )
         results = pvar.getLocalVariables()
         output_path = os.path.join( output_dir, output_name )
         for ( timestamp, result_var ) in results.items():
             outfilename = "%s-%s.nc" % ( output_path, str(timestamp) )
             outfile = cdms2.createDataset( outfilename )
             outfile.write( result_var ) 
-            global_time_index = global_time_index + 1
             outfile.close()
             time_axis = result_var.getTime()
             print "Proc %d: Wrote %s slab to file %s, time values = %s %s" % ( pvar.global_comm.Get_rank(), str(result_var.shape), outfilename, str( time_axis.getValue() ), time_axis.units )

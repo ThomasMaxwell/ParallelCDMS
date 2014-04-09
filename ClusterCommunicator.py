@@ -9,7 +9,7 @@ from Queue import Queue
 import threading, copy
 from Utilities import *
 from Tasks import Task
-from TaskMapper import TaskMapper
+#from TaskMapper import TaskMapper
 
 class TaskAllocationMethod:
     ROUND_ROBIN = 0
@@ -23,7 +23,7 @@ class TaskFarmer():
         self.task_controller = TaskController( self.task_queue, comm )
         if self.multithread: self.task_controller.start()
         self.metadata = {}
-        self.taskMapper = TaskMapper( self.task_controller.size )
+#        self.taskMapper = TaskMapper( self.task_controller.size )
         
 
     def post(self, task ):
@@ -44,30 +44,39 @@ class TaskFarmer():
     def setMetadata( self, metadata ):
         self.metadata.extend( metadata )
             
-    def createTasks( self, task_metadata ):
-        operation_metadata = task_metadata['operation']  
-        op_domain = OpDomain.parseDomainSpec( operation_metadata['domain'] )
-        task_specs = []     
-        if op_domain == OpDomain.TIME:
-            start_time, end_time, op_period, op_time_length = self.processTimeMetadata( task_metadata )                    
-            time_decomp, nslab_map = self.taskMapper.getTimeDecomposition( start_time, end_time, op_period, op_time_length )
-            slab_list = [ time_slab for ( time_slab, slab_index ) in time_decomp ]
-            for slab_index, ( time_slab, time_base_index ) in enumerate(time_decomp):
-                task_spec = copy.deepcopy( task_metadata )
-                time_metadata = task_spec.get( 'time', None )
-                if time_metadata:
-                    time_metadata['time_base_index'] = time_base_index 
-                    time_metadata['slab_index'] = slab_index 
-                    time_metadata['nslab_map'] = nslab_map 
-                    time_metadata['slabs'] = slab_list 
-                task_specs.append( task_spec )             
-        return task_specs;
+#     def createTasks( self, task_metadata ):
+#         operation_metadata = task_metadata['operation']  
+#         op_domain = OpDomain.parseDomainSpec( operation_metadata['domain'] )
+#         task_specs = []     
+#         if op_domain == OpDomain.TIME:
+#             start_time, end_time, op_period, op_time_length = self.processTimeMetadata( task_metadata )                    
+# #            time_decomp, nslab_map = self.taskMapper.getTimeDecomposition( start_time, end_time, op_period, op_time_length )
+#             slab_list = [ time_slab for ( time_slab, slab_index ) in time_decomp ]
+#             for slab_index, ( time_slab, time_base_index ) in enumerate(time_decomp):
+#                 task_spec = copy.deepcopy( task_metadata )
+#                 time_metadata = task_spec.get( 'time', None )
+#                 if time_metadata:
+#                     time_metadata['time_base_index'] = time_base_index 
+#                     time_metadata['slab_index'] = slab_index 
+#                     time_metadata['nslab_map'] = nslab_map 
+#                     time_metadata['slabs'] = slab_list 
+#                 task_specs.append( task_spec )             
+#         return task_specs;
                            
+#     def execute( self, task_metadata ): 
+#         task_specs = self.createTasks( task_metadata )
+#         for  task_spec in task_specs:
+#             if self.multithread:    self.task_queue.put_nowait( task_spec )
+#             else:                   self.task_controller.processTaskSpec( task_spec )
+#         self.task_queue.put_nowait( self.createTerminationTask() )
+
     def execute( self, task_metadata ): 
-        task_specs = self.createTasks( task_metadata )
-        for  task_spec in task_specs:
-            if self.multithread:    self.task_queue.put_nowait( task_spec )
-            else:                   self.task_controller.processTaskSpec( task_spec )
+        while True:
+            print "TaskFarmer: Waiting for instructions:"; sys.stdout.flush()
+            instructions = raw_input()
+            if instructions == 'q': break
+            if self.multithread:    self.task_queue.put_nowait( task_metadata )
+            else:                   self.task_controller.processTaskSpec( task_metadata )
         self.task_queue.put_nowait( self.createTerminationTask() )
         
     def createTerminationTask(self):
@@ -83,7 +92,7 @@ class TaskController( threading.Thread ):
         self.local_task_exec = None if self.size > 1 else TaskExecutable( self.comm )
         self.work_queue = queue
         self.active = True
-        self.task_allocation_method = TaskAllocationMethod.ROUND_ROBIN
+        self.task_allocation_method = TaskAllocationMethod.BROADCAST
         self.setDaemon(True)
         assert self.rank == 0, "Controller rank ( %d ) must be 0" % self.rank
         
@@ -103,7 +112,7 @@ class TaskController( threading.Thread ):
                 if self.task_allocation_method == TaskAllocationMethod.ROUND_ROBIN:
                     self.comm.send( task, dest=iproc, tag=11)
                 elif self.task_allocation_method == TaskAllocationMethod.BROADCAST:
-                    pass 
+                    self.comm.bcast( task, root = 0 ) 
 
 #                 self.comm.bcast( task, root = 0 )
 #     
@@ -129,7 +138,8 @@ class TaskExecutable( threading.Thread ):
         self.task_comm = task_comm
         self.rank = self.global_comm.Get_rank() if self.global_comm else 0 
         self.size = self.global_comm.Get_size() if self.global_comm else 1 
-        self.task_allocation_method = TaskAllocationMethod.ROUND_ROBIN
+        self.worker_rank = self.task_comm.Get_rank() if self.task_comm else 0 
+        self.task_allocation_method = TaskAllocationMethod.BROADCAST
         self.metadata = args
         self.active = True
         
@@ -137,6 +147,7 @@ class TaskExecutable( threading.Thread ):
         self.active = False
         
     def run(self):
+        print "Worker-%d: Waiting for tasks." % self.worker_rank ; sys.stdout.flush()
         while self.active:
             task = None
             if self.task_allocation_method == TaskAllocationMethod.BROADCAST:
