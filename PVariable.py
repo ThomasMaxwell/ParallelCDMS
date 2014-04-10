@@ -192,7 +192,7 @@ class PVariable:
         print "PVar-%d: %s" % ( self.work_rank, str(msg) ); sys.stdout.flush()                  
 
     def execute( self, comp_kernel, gather = False ):
-        self.dbg( "Execute")
+#        self.dbg( "Execute")
         tp0 = MPI.Wtime()
         ds = cdms2.open( self.dataset_path )
         self.var = ds[ self.var_name ]

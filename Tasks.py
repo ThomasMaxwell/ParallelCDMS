@@ -61,7 +61,11 @@ class TemporalProcessing(Task):
         if task_name in cls.taskmap:
             print>>sys.stderr, " Error: multiple tasks registered with name %s, some registration(s) ignored! " % task_name
         else:
-            cls.taskmap[ task_name ] = task_class 
+            cls.taskmap[ task_name ] = task_class
+
+    @classmethod
+    def getKernel( cls, task_name ):
+        return cls.taskmap.get( task_name, None )
     
     def __init__(self, task_spec, local_metadata={} ): 
         Task.__init__( self, task_spec, local_metadata ) 
@@ -106,17 +110,19 @@ class TemporalProcessing(Task):
         pvar = PVariable( task_comm, var_name, dataset_path, time_specs, grid_specs, global_comm = global_comm )
         return pvar
 
-    def map( self, global_comm, task_comm ):
-      
+    def map( self, global_comm, task_comm ):      
         dataset_metadata = self.task_metadata[ 'dataset' ]
         var_name = dataset_metadata.get( 'variable', None )
-        
-        pvar = self.getPVar( var_name, global_comm, task_comm )        
-        pvar.execute( TemporalSum(), False )
-           
-        self.writeResults( pvar )
- 
-            
+        operation_metadata = self.task_metadata[ 'operation' ]
+        task = operation_metadata['task']
+        comp_kernel = self.getKernel( task )
+        if comp_kernel <> None:       
+            pvar = self.getPVar( var_name, global_comm, task_comm )        
+            pvar.execute( comp_kernel( task_comm ), False )              
+            self.writeResults( pvar )
+        else:
+            print>>sys.stderr, "Error, Unrecognized task: ", task
+                
     def writeResults( self, pvar ):
         operation_metadata = self.task_metadata[ 'operation' ]
         output_name = operation_metadata.get( 'name', "TemporalProcessing"  )
@@ -133,8 +139,16 @@ class TemporalProcessing(Task):
         
 class computationalKernel():
     
-    def __init__( self ): 
-        pass
+    def __init__( self, task_comm ): 
+        self.task_comm = task_comm
+        
+    @property
+    def worker_rank(self):
+        return  self.task_comm.Get_rank()   
+
+    @property
+    def nworkers(self):
+        return  self.task_comm.Get_size()   
             
 class TemporalSum(computationalKernel):
             

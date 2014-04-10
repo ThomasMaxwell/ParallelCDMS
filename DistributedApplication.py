@@ -55,11 +55,11 @@ class ConfigFileParser:
 if __name__ == "__main__":
        
     app = ClusterCommunicator.getNodeApp( )
-    short_run = False
+    short_run = True
 
     if short_run:
         start_time = cdtime.comptime( 1980, 0 )  
-        end_time = cdtime.comptime( 1981, 1 )  
+        end_time = cdtime.comptime( 1980, 7 )  
     else:
         start_time = cdtime.comptime( 1980, 1 )  
         end_time = cdtime.comptime( 1982, 1 ) 
@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
     operation = {}    
     operation['domain'] = OpDomain.TIME
-    operation['type'] =   'sum'   
+    operation['task'] =   'sum'   
     operation[ 'name' ] = 'MERRA_precip_monthly_totals'
 
     time = {} 

@@ -1,0 +1,48 @@
+[dataset]
+
+   path = /Users/tpmaxwel/Data/MERRA_hourly_2D_precip/MERRA_hourly_precip.xml
+   vars = prectot
+
+[time_bounds]
+   name = monthly
+   start_time =  1980, 1
+   end_time = 1982, 1 
+   period_value = 1 
+   period_units = month
+
+[time_bounds]
+   name = full
+   start_time =  1980, 1
+   end_time = 1982, 1 
+
+[grid]
+   name = roi
+   lat =  40, 80
+   lon = -180, 0  
+
+[tvar]
+   name = precip_mean
+   input = prectot
+   task = sum
+   grid = roi
+   time_bounds = full
+
+[tvar]
+   name = precip_monthly_anomaly
+   input = prectot, precip_mean
+   task = diff
+   grid = roi
+   time_bounds = monthly
+   reducer = sum
+
+[tvar]
+   name = precip_monthly_totals
+   input = prectot
+   grid = roi
+   time_bounds = monthly
+   reducer = sum
+   
+[output]
+   filename = MERRA_precip_monthly_totals
+   tvars = precip_monthly_totals, precip_monthly_anomaly
+   
