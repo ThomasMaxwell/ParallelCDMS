@@ -160,18 +160,21 @@ class PVariable:
 
     def getAxes( self, slice_var, decomp, slices = None ):
         axes = []
+        if slices == None: slices = decomp.slice_decomp_list 
         for iAxis in range( slice_var.rank() ):
             axis =  slice_var.getAxis( iAxis )
             if axis.isTime():
                 time_data = []
-                bounds = []
-                if slices == None:
-                    slices = [ slice[0:-1] for slice in self.slice_list ]
+                bounds = []                 
                 for slice in slices:
                     if not isList( slice ): slice = [ slice ]
                     for timestamp in slice:
-                        rdt0 = TimeUtil.getRelTime( timestamp, decomp.period_units, decomp.global_start_time, axis.getCalendar() )
-                        rdt1 = rdt0.add( decomp.slice_length_value, decomp.slice_length_units )
+                        if isList( timestamp ):
+                            rdt0 = TimeUtil.getRelTime( timestamp[0], decomp.period_units, decomp.global_start_time, axis.getCalendar() )
+                            rdt1 = TimeUtil.getRelTime( timestamp[1], decomp.period_units, decomp.global_start_time, axis.getCalendar() )                           
+                        else:
+                            rdt0 = TimeUtil.getRelTime( timestamp, decomp.period_units, decomp.global_start_time, axis.getCalendar() )
+                            rdt1 = rdt0.add( decomp.slice_length_value, decomp.slice_length_units )
                         time_data.append( rdt0.value )
                         bounds.append(  ( rdt0.value, rdt1.value )  )
                 np_time_data = numpy.array(  time_data, dtype=numpy.float ) 
@@ -183,10 +186,14 @@ class PVariable:
                 axes.append( newTimeAxis )
             else:
                 axes.append( axis ) 
-        return axes                    
+        return axes  
+    
+    def dbg( self, msg ):
+        print "PVar-%d: %s" % ( self.work_rank, str(msg) ); sys.stdout.flush()                  
 
     def execute( self, comp_kernel, gather = False ):
-        tp0 = time.clock()
+        self.dbg( "Execute")
+        tp0 = MPI.Wtime()
         ds = cdms2.open( self.dataset_path )
         self.var = ds[ self.var_name ]
         
@@ -197,18 +204,17 @@ class PVariable:
                 
         sel = self.getSelector( decomp )
         if sel: self.var = self.var(sel)
-        tp1 = time.clock()
+        tp1 = MPI.Wtime()
         tp = tp1 - tp0
-#        print "Proc %d: Done Mapping Task, time = %.3f" % ( self.global_comm.Get_rank(), tp ); sys.stdout.flush()               
         
-        print "PVariable-%d: RunTimeProcessing: %s " % ( self.work_rank, str( decomp.getWorkerTimeBounds() ) ); sys.stdout.flush()
+        self.dbg("Finished IO, time = %.3f, Run Processing, Time Bounds: %s " % (  tp, str( decomp.getWorkerTimeBounds() ) ) )            
        
-        tr0 = time.clock()
+        tr0 = MPI.Wtime()
         self.runTimeProcessing( comp_kernel, decomp, gather )
-        tr1 = time.clock()
+        tr1 = MPI.Wtime()
         tr = tr1 - tr0
 
-        print "PVariable-%d.execute: nslices = %d, data prep time = %.3f sec, processing time = %.3f sec, total time = %.3f sec  " % ( self.work_rank, len(self.cdms_variables), tp, tr, (tp+tr) )
+        self.dbg(" Task Completion: nslices = %d, IO time = %.3f sec, processing time = %.3f sec, total time = %.3f sec  " % ( len(self.cdms_variables), tp, tr, (tp+tr) ) )
 
         
     def runTimeProcessing( self, comp_kernel, decomp, gather ):
@@ -224,7 +230,7 @@ class PVariable:
             slice_var = self.var( time=(t0,t1,'co')  )
             slice_array = numpy.ma.array( slice_var.data, mask=slice_var.mask )
              
-            print "Proc %d: processDataSlice[%d]: time = %s." % ( self.global_comm.Get_rank(), iTime, str(t0) ); sys.stdout.flush()
+            self.dbg("ProcessDataSlice[%d]: time = %s." % ( iTime, str(t0) ) )
             processedData = comp_kernel.execute( slice_array, axis=self.timeAxisIndex )  
             result = self.recoverLostDim( processedData, self.timeAxisIndex, self.var.rank() )
             
@@ -238,10 +244,13 @@ class PVariable:
        
         if gather:    
             merged_result = numpy.concatenate( results, self.timeAxisIndex ) 
-            if self.task_comm == None:
+            if self.worker_comm == None:
                 rvar = cdms2.createVariable( merged_result, id=self.var.id, copy=0, axes=self.getAxes( slice_var, decomp ) ) 
             else:
-                gathered_result = self.gather( merged_result )     
+                t0 = MPI.Wtime()
+                gathered_result = self.gather( merged_result, decomp ) 
+                t1 = MPI.Wtime()
+                self.dbg("Gather time = %.2f, result shape = %s" % ( t1-t0, str(gathered_result.shape) )  )  
                 rvar = cdms2.createVariable( gathered_result, id=self.var.id, copy=0, axes=self.getAxes( slice_var, decomp ) ) 
             self.cdms_variables[ time_steps[0].replace(' ','_').replace(':','-') ] = rvar 
                            
@@ -277,17 +286,17 @@ class PVariable:
     def reduce( self, data_array ):
         return None
     
-    def gather( self, data_array, proc_index = -1 ):
+    def gather( self, data_array, decomp, proc_index = -1 ):
         new_shape = numpy.array( data_array.shape, dtype = 'f', copy=True )
         base_size, base_shape = self.getBaseSizeAndShape( data_array.shape, self.timeAxisIndex )
-        nslices = self.decomp.nslice_map.sum()
-        print "Gather: base_size = %s, base_shape = %s, nslice_map = %s, nslices = %s "  % ( str(base_size), str(base_shape), str(self.decomp.nslice_map), str(nslices) )      
+        nslices = decomp.nslice_map.sum()
+#        self.dbg( "Gather: base_size = %s, base_shape = %s, nslice_map = %s, nslices = %s "  % ( str(base_size), str(base_shape), str(decomp.nslice_map), str(nslices) )  )    
         new_shape[ self.timeAxisIndex ] = nslices
         gathered_array = numpy.empty( [ new_shape.prod() ], dtype='f' )
         if proc_index < 0:
-            self.task_comm.Allgatherv( sendbuf=[ data_array.flatten(), MPI.FLOAT ], recvbuf=[ gathered_array, (self.nslice_map*base_size, None), MPI.FLOAT] )
+            self.worker_comm.Allgatherv( sendbuf=[ data_array.flatten(), MPI.FLOAT ], recvbuf=[ gathered_array, (decomp.nslice_map*base_size, None), MPI.FLOAT] )
         else: 
-            self.task_comm.Gatherv( sendbuf=[ data_array.flatten(), MPI.FLOAT ], recvbuf=[ gathered_array, (self.nslice_map*base_size, None), MPI.FLOAT], root=proc_index )
+            self.worker_comm.Gatherv( sendbuf=[ data_array.flatten(), MPI.FLOAT ], recvbuf=[ gathered_array, (decomp.nslice_map*base_size, None), MPI.FLOAT], root=proc_index )
         result = None
         if (proc_index < 0) or ( proc_index == self.worker_comm.Get_rank() ):
             if self.timeAxisIndex == 0:

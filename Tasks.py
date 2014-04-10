@@ -107,21 +107,15 @@ class TemporalProcessing(Task):
         return pvar
 
     def map( self, global_comm, task_comm ):
-        tr0 = time.clock()        
-
+      
         dataset_metadata = self.task_metadata[ 'dataset' ]
         var_name = dataset_metadata.get( 'variable', None )
         
         pvar = self.getPVar( var_name, global_comm, task_comm )        
         pvar.execute( TemporalSum(), False )
-        
-        tr1 = time.clock()
-        tr = tr1 - tr0
-        tw0 = time.clock()       
+           
         self.writeResults( pvar )
-        tw1 = time.clock()
-        tw = tw1 - tw0
-        print "Proc %d:  Computed result, nslabs = %d, processing time = %.3f sec, write time = %.3f sec, total time = %.3f sec  " % ( global_comm.Get_rank(), pvar.len(), tr, tw, (tr+tw) )
+ 
             
     def writeResults( self, pvar ):
         operation_metadata = self.task_metadata[ 'operation' ]
