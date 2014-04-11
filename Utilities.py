@@ -7,6 +7,22 @@ Created on Jan 15, 2014
 import numpy as np
 import vtk, StringIO, cPickle, sys, os, cdtime, cdutil
 
+class multidict(dict):
+    def __setitem__( self, key, new_val ):
+        curr_val = self.get( key, None )
+        if curr_val == None:
+            if isinstance( new_val, list ): new_val = tuple( new_val )
+            dict.__setitem__(self, key, new_val )
+        else:
+            if isinstance( curr_val, list ): curr_val.append( new_val )
+            else: curr_val = [ curr_val, new_val ]
+            dict.__setitem__(self, key, curr_val )
+
+def getList( obj ):
+    if obj == None: return []
+    if isinstance( obj, list ): return obj
+    return [ obj ]
+
 class TimeUtil:
     time_str = [ "UNDEF", "seconds", "minutes", "hours", "days", "weeks", "months", "seasons", "years" ]    
     

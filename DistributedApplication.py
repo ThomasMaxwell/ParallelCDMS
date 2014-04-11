@@ -18,7 +18,7 @@ class ConfigFileParser:
     
     def __init__ (self, configFilePath ):
         self.config_file = open( os.path.expanduser(configFilePath), 'r' )
-        self.cats = {}
+        self.cats = multidict()
         self.current_cat = None
         self.current_cat_name = None
         self.parse()
@@ -37,11 +37,8 @@ class ConfigFileParser:
                         self.addField( toks[0].strip().lower(), toks[1].strip() )
                     
     def addCategory( self, cat_name ):
-        if cat_name in self.cats:
-            self.current_cat = self.cats[ cat_name ]
-        else:
-            self.current_cat = {}
-            self.cats[ cat_name ] = self.current_cat
+        self.current_cat = {}
+        self.cats[ cat_name ] = self.current_cat
         self.current_cat_name = cat_name
             
     def addField( self, name, value ):

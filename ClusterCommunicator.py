@@ -29,17 +29,17 @@ class TaskFarmer():
     def post(self, task ):
         self.task_queue.put_nowait( task )
         
-    def processTimeMetadata( self, task_metadata ):
-        time_mdata = task_metadata.get('time', None )
-        start_time =   TimeUtil.getCompTime( time_mdata.get('start_time',None) )
-        end_time =     TimeUtil.getCompTime( time_mdata.get('end_time',None) )
-        op_period_value = TimeUtil.parseRelTimeValueSpec( time_mdata.get( 'period_value', None ) ) 
-        op_period_units = TimeUtil.parseTimeUnitSpec( time_mdata.get( 'period_units', None ) )
-        period = None if (op_period_value == None ) else ( op_period_value, op_period_units )
-        op_time_length_value = TimeUtil.parseRelTimeValueSpec( time_mdata.get( 'time_length', None ) )   
-        op_time_length_units = TimeUtil.parseTimeUnitSpec( time_mdata.get( 'time_length_units', None ) )
-        time_length = None if (op_time_length_value == None ) else ( op_time_length_value, op_time_length_units )
-        return start_time, end_time, period, time_length
+#     def processTimeMetadata( self, task_metadata ):
+#         time_mdata = task_metadata.get('time', None )
+#         start_time =   TimeUtil.getCompTime( time_mdata.get('start_time',None) )
+#         end_time =     TimeUtil.getCompTime( time_mdata.get('end_time',None) )
+#         op_period_value = TimeUtil.parseRelTimeValueSpec( time_mdata.get( 'period_value', None ) ) 
+#         op_period_units = TimeUtil.parseTimeUnitSpec( time_mdata.get( 'period_units', None ) )
+#         period = None if (op_period_value == None ) else ( op_period_value, op_period_units )
+#         op_time_length_value = TimeUtil.parseRelTimeValueSpec( time_mdata.get( 'time_length', None ) )   
+#         op_time_length_units = TimeUtil.parseTimeUnitSpec( time_mdata.get( 'time_length_units', None ) )
+#         time_length = None if (op_time_length_value == None ) else ( op_time_length_value, op_time_length_units )
+#         return start_time, end_time, period, time_length
                         
     def setMetadata( self, metadata ):
         self.metadata.extend( metadata )

@@ -21,28 +21,27 @@
    lon = -180, 0  
 
 [tvar]
-   name = precip_mean
+   name = precip_climatology
    input = prectot
-   task = sum
+   task = ave
    grid = roi
    time_bounds = full
-
-[tvar]
-   name = precip_monthly_anomaly
-   input = prectot, precip_mean
-   task = diff
-   grid = roi
-   time_bounds = monthly
-   reducer = sum
 
 [tvar]
    name = precip_monthly_totals
    input = prectot
    grid = roi
+   task = sum
    time_bounds = monthly
-   reducer = sum
+   
+[tvar]
+   name = precip_monthly_anomaly
+   input = precip_monthly_totals, precip_climatology
+   task = diff
+   grid = roi
+   time_bounds = monthly
    
 [output]
-   filename = MERRA_precip_monthly_totals
-   tvars = precip_monthly_totals, precip_monthly_anomaly
+   filename = MERRA_precip_analysis
+   tvars = precip_monthly_totals, precip_monthly_anomaly, precip_climatology
    
