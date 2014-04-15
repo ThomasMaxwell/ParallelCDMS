@@ -11,11 +11,14 @@ import sys
          
 app = ClusterCommunicator.getNodeApp( )
 task_metadata = {}
-    
-if len(sys.argv)>2 and sys.argv[1] == '-c':
-    config_parser = ConfigFileParser( sys.argv[2] )
-    task_metadata = config_parser.data()
+config_file = "./config/ParallelCDMS.nasa-desktop-merge.txt"
 
+if len(sys.argv)>2 and sys.argv[1] == '-c':
+    config_file = sys.argv[2] 
+    
+print "Running PCDMS with config file ", config_file  
+config_parser = ConfigFileParser( config_file )
+task_metadata = config_parser.data()     
         
 app.execute( task_metadata )
    

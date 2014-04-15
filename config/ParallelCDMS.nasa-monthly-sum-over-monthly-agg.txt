@@ -1,13 +1,13 @@
 [dataset]
 
-   path = /Users/tpmaxwel/Data/MERRA_hourly_2D_precip/MERRA_hourly_precip.xml
+   path = /Users/tpmaxwel/Data/MERRA_hourly_2D_precip/MERRA_hourly_precip_monthly_agg.xml
    variable = prectot
 
 [operation]
 
    domain = time
    task = sum
-   name = MERRA_precip_monthly_totals
+   name = MERRA_precip_monthly_totals_ma
 
 [time]
 
@@ -20,3 +20,4 @@
 
    lat =  40, 80
    lon = -180, 0  
+

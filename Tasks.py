@@ -135,7 +135,7 @@ class TemporalProcessing(Task):
             outfile.write( result_var ) 
             outfile.close()
             time_axis = result_var.getTime()
-            print "Proc %d: Wrote %s slab to file %s, time values = %s %s" % ( pvar.global_comm.Get_rank(), str(result_var.shape), outfilename, str( time_axis.getValue() ), time_axis.units )
+            print "Proc %d: Wrote %s slab to file %s" % ( pvar.global_comm.Get_rank(), str(result_var.shape), outfilename )
         
 class computationalKernel():
     
@@ -178,7 +178,12 @@ class TemporalMin(computationalKernel):
 
 TemporalProcessing.register( 'min', TemporalMin )
 
-TemporalProcessing.register( 'sub', TemporalProcessing )
+class TemporalSubset(computationalKernel):
+            
+    def execute( self, slice_array, **args ):
+        return slice_array
+
+TemporalProcessing.register( 'sub', TemporalSubset )
     
 
 

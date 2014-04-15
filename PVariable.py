@@ -7,6 +7,7 @@ import cdutil, cdms2, os, numpy, copy, time, itertools
 from mpi4py import MPI
 from cdms2.selectors import Selector
 from Utilities import *
+#from netCDF4 import Dataset
 
 def serializeSpec( spec ):
     if isinstance( spec, list ) or isinstance( spec, tuple ):
@@ -56,8 +57,12 @@ class ParallelDecomposition:
     def getNumberOfSlices(self):   
         return len( self.worker_slice_allocation ) 
 
-    def getSlice( self, slice_index ):   
-        return self.worker_slice_allocation[slice_index]
+    def getSlice( self, slice_index=-1 ): 
+        if slice_index < 0:   slice_index = self.work_rank
+        try:
+            return self.worker_slice_allocation[slice_index]
+        except IndexError:
+            print>>sys.stderr, "IndexError in getSlice: slice_index = %d, worker_slice_allocation size = %d, rank = %d, nworkers = %d" % ( slice_index, len(self.worker_slice_allocation), self.work_rank, self.nworkers )
 
     def generateSpatialDecomposition( self ):
         dLonGlobal = self.lon_bounds[1] - self.lon_bounds[0]
@@ -184,6 +189,7 @@ class PVariable:
                 newTimeAxis.id = "Time"
                 newTimeAxis.units = rdt0.units
                 axes.append( newTimeAxis )
+                print "Creating Time Axis, data=%s, units=%s, bounds=%s, size =%d" % ( str(time_data), newTimeAxis.units, str(bounds), len(newTimeAxis) )
             else:
                 axes.append( axis ) 
         return axes  
@@ -191,22 +197,47 @@ class PVariable:
     def dbg( self, msg ):
         print "PVar-%d: %s" % ( self.work_rank, str(msg) ); sys.stdout.flush()                  
 
+#    from netCDF4 import Dataset
+#         tp0 = MPI.Wtime()
+#         data_file = os.path.join( '/Users/tpmaxwel/Data/MERRA_hourly_2D_precip', file ) 
+#         dset = Dataset( data_file, 'r', format='NETCDF4')
+#         precip_var = dset.variables[ 'prectot' ]
+#         total_shape = precip_var.shape
+#         data_slice = precip_var[0:24,100:281,100:371]
+#         dset.close()
+#         tp1 = MPI.Wtime()
+#         print "Read data slice %d/%d from file %s%s, shape=%s, time = %.2f" % ( index, nfile, file, str(total_shape), str(data_slice.shape), tp1-tp0 )
+
+    def read_data_slice_cdms(self, ds, decomp):
+        sel = self.getSelector( decomp )
+        if sel: self.var = self.var(sel)
+
+
+#     def read_data_slice_nc4(self, ds, decomp):
+#         data_files = ds.getPaths()
+#         slices = [ ]
+#         for data_file in data_files:
+#             dset = Dataset( data_file, 'r', format='NETCDF4')
+#             dvar = dset.variables[ self.var_name ]
+#             indices = self.getIntervals( decomp )
+#             data_slice = dvar[indices[0][0]:indices[0][1], indices[1][0]:indices[1][1], indices[2][0]:indices[2][1] ]
+#             slices.append( data_slice )
+#         return slices
+        
     def execute( self, comp_kernel, gather = False ):
 #        self.dbg( "Execute")
-        tp0 = MPI.Wtime()
-        ds = cdms2.open( self.dataset_path )
+        ds = cdms2.open( self.dataset_path )        
         self.var = ds[ self.var_name ]
+        self.long_name = self.var.long_name if hasattr( self.var, 'long_name' ) else self.var_name
         
         decomp = ParallelDecomposition( self.work_rank, self.nworkers )  
         decomp.processTimeMetadata( self.time_specs )
         decomp.generateTimeDecomposition()
-
                 
-        sel = self.getSelector( decomp )
-        if sel: self.var = self.var(sel)
+        tp0 = MPI.Wtime()
+        self.read_data_slice_cdms( ds, decomp )
         tp1 = MPI.Wtime()
         tp = tp1 - tp0
-        
         self.dbg("Finished IO, time = %.3f, Run Processing, Time Bounds: %s " % (  tp, str( decomp.getWorkerTimeBounds() ) ) )            
        
         tr0 = MPI.Wtime()
@@ -239,7 +270,16 @@ class PVariable:
                     results.append( result )
                     time_steps.append( t0 )
                 else:
-                    rvar = cdms2.createVariable( result, id=self.var.id, copy=0, axes=self.getAxes( slice_var, decomp, [ t0 ] ) )
+                    ntimesteps=result.shape[self.timeAxisIndex]
+                    current_slice = decomp.getSlice()
+#                    print " Creating time axis: ntimesteps=%d, result shape = %s, slice shape = %s, time_slices = %s " % ( ntimesteps, str( result.shape ), str( slice_array.shape ), str(current_slice) )
+                    if ntimesteps == 1:  
+                        new_axes=self.getAxes( slice_var, decomp, [ t0 ] )
+                    elif ntimesteps == slice_var.shape[ self.timeAxisIndex ]:
+                        new_axes = slice_var.getAxisList()
+                    else: print>>sys.stderr, "Problem with time axis: size = %d, slices = %s " % ( ntimesteps, str( current_slice ) )
+                    rvar = cdms2.createVariable( result, id=self.var.id, copy=0, axes=new_axes )
+                    rvar.long_name = self.long_name
                     self.cdms_variables[ t0.replace(' ','_').replace(':','-') ] = rvar 
        
         if gather:    
@@ -261,6 +301,37 @@ class PVariable:
     
     def len(self):
         return len( self.cdms_variables )
+
+    def getIntervals( self, decomp ):  
+        intervals = [ None ] * self.var.rank()
+        lat_bounds = OpDomain.parseBoundsSpec( self.grid_specs.get( 'lat', None ) )
+        if lat_bounds:
+            lat_axis = self.var.GetLatitude()
+            if lat_axis:
+                lat_axis_index = self.var.getAxisIndex('latitude')
+                interval = lat_axis.mapInterval( lat_bounds )
+                if not isList( lat_bounds ): lat_interval = interval[0]
+                else: lat_interval =  interval[0]  if ( len( interval ) == 1 ) else interval 
+                intervals[ lat_axis_index ] = lat_interval
+        lon_bounds = OpDomain.parseBoundsSpec( self.grid_specs.get( 'lon', None ) )
+        if lon_bounds:
+            lon_axis = self.var.GetLongitude()
+            if lon_axis:
+                lon_axis_index = self.var.getAxisIndex('longitude')
+                interval = lon_axis.mapInterval( lon_bounds )
+                if not isList( lon_bounds ): lon_interval = interval[0]
+                else: lon_interval =  interval[0]  if ( len( interval ) == 1 ) else interval 
+                intervals[ lon_axis_index ] = lon_interval
+        lev_bounds = OpDomain.parseBoundsSpec( self.grid_specs.get( 'lev', None ) )
+        if lev_bounds:
+            lev_axis = self.var.GetLevel()
+            if lev_axis:
+                lev_axis_index = self.var.getAxisIndex('level')
+                interval = lev_axis.mapInterval( lev_bounds )
+                if not isList( lev_bounds ): lev_interval = interval[0]
+                else: lev_interval =  interval[0]  if ( len( interval ) == 1 ) else interval 
+                intervals[ lev_axis_index ] = lev_interval
+        return intervals
                   
     def getSelector( self, decomp ):  
         sel = None
