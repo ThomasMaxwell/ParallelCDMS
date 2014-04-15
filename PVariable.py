@@ -62,7 +62,7 @@ class ParallelDecomposition:
         try:
             return self.worker_slice_allocation[slice_index]
         except IndexError:
-            print>>sys.stderr, "IndexError in getSlice: slice_index = %d, worker_slice_allocation size = %d, rank = %d, nworkers = %d" % ( slice_index, len(self.worker_slice_allocation), self.work_rank, self.nworkers )
+            print>>sys.stderr, "------------------------------->>>>> IndexError in getSlice: slice_index = %d, worker_slice_allocation size = %d, rank = %d, nworkers = %d" % ( slice_index, len(self.worker_slice_allocation), self.work_rank, self.nworkers )
 
     def generateSpatialDecomposition( self ):
         dLonGlobal = self.lon_bounds[1] - self.lon_bounds[0]
@@ -271,13 +271,12 @@ class PVariable:
                     time_steps.append( t0 )
                 else:
                     ntimesteps=result.shape[self.timeAxisIndex]
-                    current_slice = decomp.getSlice()
 #                    print " Creating time axis: ntimesteps=%d, result shape = %s, slice shape = %s, time_slices = %s " % ( ntimesteps, str( result.shape ), str( slice_array.shape ), str(current_slice) )
                     if ntimesteps == 1:  
                         new_axes=self.getAxes( slice_var, decomp, [ t0 ] )
                     elif ntimesteps == slice_var.shape[ self.timeAxisIndex ]:
                         new_axes = slice_var.getAxisList()
-                    else: print>>sys.stderr, "Problem with time axis: size = %d, slices = %s " % ( ntimesteps, str( current_slice ) )
+                    else: print>>sys.stderr, "Problem with time axis: result ntimesteps = %d, slice ntimesteps = %s " % ( ntimesteps, slice_var.shape[ self.timeAxisIndex ] )
                     rvar = cdms2.createVariable( result, id=self.var.id, copy=0, axes=new_axes )
                     rvar.long_name = self.long_name
                     self.cdms_variables[ t0.replace(' ','_').replace(':','-') ] = rvar 
